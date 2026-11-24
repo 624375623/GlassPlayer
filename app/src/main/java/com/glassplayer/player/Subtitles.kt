@@ -3,29 +3,161 @@ package com.glassplayer.player
 import android.content.Context
 import android.net.Uri
 
-data class SubtitleCue(val startMs: Long, val endMs: Long, val text: String)
+enum class SubtitleKind { DIALOGUE, LYRIC, SIGN, NOTE }
+
+/**
+ * 一条 ASS / SRT / VTT 字幕事件。
+ *
+ * ASS 的双语字幕经常不是同一句话里用 \N 分行，而是同一时刻写两条 Dialogue：
+ * 中文一条、日文一条，各自带样式和 MarginV。只保留 start/end/text 会丢掉
+ * “同一时刻还有另一条”的信息，所以这里把样式、层级和垂直边距一起留下来。
+ */
+data class SubtitleCue(
+    val startMs: Long,
+    val endMs: Long,
+    val text: String,
+    val style: String = "",
+    val layer: Int = 0,
+    val order: Int = 0,
+    val fontSize: Float = 0f,
+    val alignment: Int = 2,
+    val marginV: Int = 0,
+    val kind: SubtitleKind = SubtitleKind.DIALOGUE,
+    val isDrawing: Boolean = false,
+)
+
+data class SubtitleLine(
+    val text: String,
+    val style: String = "",
+    val fontSize: Float = 0f,
+    val alignment: Int = 2,
+)
 
 data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
 
+    private val maxDurationMs = cues.maxOfOrNull { (it.endMs - it.startMs).coerceAtLeast(0L) } ?: 0L
+
+    /**
+     * 返回当前时刻所有应显示的字幕行，按画面上的从上到下排序。
+     *
+     * 旧实现用二分查找只返回第一条命中的 cue，同一时刻的中文 / 日文事件只能显示一条；
+     * 这里先定位到当前位置，再回看所有仍在有效期内的重叠事件，合并成多行。
+     */
+    fun linesAt(positionMs: Long): List<SubtitleLine> {
+        if (cues.isEmpty()) return emptyList()
+        val anchor = firstIndexAfter(positionMs) - 1
+        if (anchor < 0) return emptyList()
+
+        val active = ArrayList<SubtitleCue>()
+        val earliest = positionMs - maxDurationMs
+        var index = anchor
+        while (index >= 0 && cues[index].startMs >= earliest) {
+            val cue = cues[index]
+            if (positionMs >= cue.startMs && positionMs < cue.endMs && !cue.isDrawing) {
+                active += cue
+            }
+            index--
+        }
+        return selectLines(active)
+    }
+
+    /** 兼容旧调用点：把同一时刻的多条活动字幕合成一个多行字符串。 */
     fun textAt(positionMs: Long): String? {
-        if (cues.isEmpty()) return null
+        val lines = linesAt(positionMs)
+        if (lines.isEmpty()) return null
+        return lines.joinToString("\n") { it.text }
+    }
+
+    private fun firstIndexAfter(positionMs: Long): Int {
         var low = 0
-        var high = cues.size - 1
-        while (low <= high) {
+        var high = cues.size
+        while (low < high) {
             val mid = (low + high) ushr 1
-            val cue = cues[mid]
-            when {
-                positionMs < cue.startMs -> high = mid - 1
-                positionMs > cue.endMs -> low = mid + 1
-                else -> return cue.text
+            if (cues[mid].startMs <= positionMs) low = mid + 1 else high = mid
+        }
+        return low
+    }
+
+    private fun selectLines(active: List<SubtitleCue>): List<SubtitleLine> {
+        if (active.isEmpty()) return emptyList()
+
+        // 有对白时优先显示对白；Sign / Note 之类的画面字不抢对白的位置。
+        // 没有对白时才退回到歌词 / 画面文本，避免整段时间完全空白。
+        val dialogue = active.filter { it.kind == SubtitleKind.DIALOGUE }
+        val pool = if (dialogue.isNotEmpty()) {
+            dialogue
+        } else {
+            active.filter { it.kind != SubtitleKind.NOTE }
+        }
+        if (pool.isEmpty()) return emptyList()
+
+        // 同一 style + 同一文本的连续 / 逐帧事件只保留当前最新的一条，避免
+        // OP / ED 的逐帧特效事件在同一时刻堆成几十行；同一样式但文本不同的
+        // 重叠对白仍然各自保留，不会被后一条吞掉。
+        val newestByStyleAndText = LinkedHashMap<String, SubtitleCue>()
+        for (cue in pool) {
+            val key = cue.style.trim().lowercase().ifBlank { "_default" } + "\u0000" + cue.text
+            val current = newestByStyleAndText[key]
+            if (current == null ||
+                cue.startMs > current.startMs ||
+                (cue.startMs == current.startMs && cue.order >= current.order)
+            ) {
+                newestByStyleAndText[key] = cue
             }
         }
-        return null
+
+        return newestByStyleAndText.values
+            .sortedWith(
+                compareBy<SubtitleCue> { verticalRank(it.alignment) }
+                    .thenBy { if (it.alignment in 7..9) it.marginV else -it.marginV }
+                    .thenBy { languageRank(it.style) }
+                    .thenBy { it.order },
+            )
+            .map {
+                SubtitleLine(
+                    text = it.text,
+                    style = it.style,
+                    fontSize = it.fontSize,
+                    alignment = it.alignment,
+                )
+            }
+            // 中英 / 中日文完全相同的歌词只留一行（例如 "Shall we dance"）
+            .distinctBy { it.text }
+            .take(MAX_LINES)
+    }
+
+    /** ASS 的 numpad 对齐：7~9 在顶部，4~6 居中，1~3 在底部。 */
+    private fun verticalRank(alignment: Int): Int = when (alignment) {
+        in 7..9 -> 0
+        in 4..6 -> 1
+        else -> 2
+    }
+
+    private fun languageRank(style: String): Int {
+        val value = style.lowercase()
+        return when {
+            value.endsWith("cn") || value.contains(" chs") || value.contains("zh") ||
+                value.contains("chi") -> 0
+            value.endsWith("jp") || value.contains(" ja") -> 2
+            value.endsWith("en") || value.contains(" eng") -> 3
+            else -> 1
+        }
+    }
+
+    private companion object {
+        // 手机竖屏最多同时显示四行；超过时优先保留最靠近底部的语言行。
+        const val MAX_LINES = 4
     }
 }
 
 /** Reads external subtitle files: SRT / WebVTT / ASS / SSA. */
 object SubtitleParser {
+
+    private data class AssStyle(
+        val fontSize: Float = 0f,
+        val alignment: Int = 2,
+        val marginV: Int = 0,
+    )
 
     private val timeLine = Regex(
         """[0-9]{1,2}:[0-9]{2}:[0-9]{2}[,.]?[0-9]{0,3}\s*-->\s*[0-9]{1,2}:[0-9]{2}:[0-9]{2}[,.]?[0-9]{0,3}""",
@@ -36,6 +168,7 @@ object SubtitleParser {
     // 两个花括号都转义：Android ICU 正则把未配对/未转义的 } 当作非法量词，
     // 只转义开头的 \{ 会在编译时抛 PatternSyntaxException，导致 object 初始化崩溃
     private val assTag = Regex("""\{[^}]*\}""")
+    private val assDrawingTag = Regex("""\\p(\d+)""")
 
     fun read(context: Context, uri: Uri): Pair<String, String>? {
         val displayName = queryName(context, uri) ?: "external.srt"
@@ -94,7 +227,7 @@ object SubtitleParser {
             lower.endsWith(".ass") || lower.endsWith(".ssa") -> parseAss(text)
             else -> parseTimedText(text)
         }
-        return SubtitleTrack(fileName, cues.sortedBy { it.startMs })
+        return SubtitleTrack(fileName, cues.sortedWith(compareBy({ it.startMs }, { it.order })))
     }
 
     private fun parseTimedText(text: String): List<SubtitleCue> {
@@ -130,38 +263,127 @@ object SubtitleParser {
 
     private fun parseAss(text: String): List<SubtitleCue> {
         val cues = ArrayList<SubtitleCue>()
+        val styles = HashMap<String, AssStyle>()
+        var inStyles = false
         var inEvents = false
+        var styleFormat = emptyList<String>()
         var startField = 1
         var endField = 2
+        var styleField = 3
+        var layerField = 0
+        var marginVField = 7
         var textField = 9
+        var order = 0
+
         text.split('\n').forEach { rawLine ->
             val line = rawLine.trim()
+            if (line.startsWith("[")) {
+                inStyles = line == "[V4+ Styles]" || line == "[V4 Styles]"
+                inEvents = line == "[Events]"
+                return@forEach
+            }
             when {
-                line.startsWith("[Events]") -> inEvents = true
-                line.startsWith("Format:") && inEvents -> {
-                    val fields = line.removePrefix("Format:").split(',').map { it.trim().lowercase() }
-                    startField = fields.indexOf("start").coerceAtLeast(1)
-                    endField = fields.indexOf("end").coerceAtLeast(2)
-                    textField = fields.indexOf("text").coerceAtLeast(9)
+                inStyles && line.startsWith("Format:") -> {
+                    styleFormat = line.removePrefix("Format:")
+                        .split(',')
+                        .map { it.trim().lowercase() }
                 }
+
+                inStyles && line.startsWith("Style:") -> {
+                    if (styleFormat.isEmpty()) return@forEach
+                    val values = line.removePrefix("Style:").split(',')
+                    val nameIndex = styleFormat.indexOf("name")
+                    val name = values.getOrNull(nameIndex)?.trim().orEmpty()
+                    if (name.isEmpty()) return@forEach
+                    styles[name.lowercase()] = AssStyle(
+                        fontSize = values.getOrNull(styleFormat.indexOf("fontsize"))
+                            ?.trim()?.toFloatOrNull() ?: 0f,
+                        alignment = values.getOrNull(styleFormat.indexOf("alignment"))
+                            ?.trim()?.toIntOrNull() ?: 2,
+                        marginV = values.getOrNull(styleFormat.indexOf("marginv"))
+                            ?.trim()?.toIntOrNull() ?: 0,
+                    )
+                }
+
+                inEvents && line.startsWith("Format:") -> {
+                    val fields = line.removePrefix("Format:")
+                        .split(',')
+                        .map { it.trim().lowercase() }
+                    startField = fields.indexOf("start").takeIf { it >= 0 } ?: 1
+                    endField = fields.indexOf("end").takeIf { it >= 0 } ?: 2
+                    styleField = fields.indexOf("style").takeIf { it >= 0 } ?: 3
+                    layerField = fields.indexOf("layer").takeIf { it >= 0 } ?: 0
+                    marginVField = fields.indexOf("marginv").takeIf { it >= 0 } ?: 7
+                    textField = fields.indexOf("text").takeIf { it >= 0 } ?: 9
+                }
+
                 inEvents && line.startsWith("Dialogue:") -> {
-                    val parts = line.removePrefix("Dialogue:").split(',', limit = textField + 2)
-                    if (parts.size > textField) {
-                        val start = parseTimestamp(parts[startField])
-                        val end = parseTimestamp(parts[endField])
-                        val body = parts[textField]
-                            .replace(assTag, "")
-                            .replace("\\N", "\n")
-                            .replace("\\n", "\n")
-                            .trim()
-                        if (start >= 0 && end > start && body.isNotEmpty()) {
-                            cues += SubtitleCue(start, end, body)
-                        }
+                    // limit 必须恰好是 textField + 1：多给 1 会把 Text 里第一个
+                    // 英文逗号之后的内容切到下一个元素，字幕会被截断。
+                    val parts = line.removePrefix("Dialogue:")
+                        .split(',', limit = textField + 1)
+                    if (parts.size <= textField) return@forEach
+
+                    val start = parseTimestamp(parts.getOrNull(startField).orEmpty())
+                    val end = parseTimestamp(parts.getOrNull(endField).orEmpty())
+                    val style = parts.getOrNull(styleField)?.trim().orEmpty()
+                    val layer = parts.getOrNull(layerField)?.trim()?.toIntOrNull() ?: 0
+                    val eventMarginV = parts.getOrNull(marginVField)?.trim()?.toIntOrNull() ?: 0
+                    val info = styles[style.lowercase()] ?: AssStyle()
+                    val rawBody = parts[textField]
+                    val drawing = isDrawing(rawBody)
+                    val body = cleanAssText(rawBody)
+
+                    if (start >= 0 && end > start && body.isNotEmpty()) {
+                        cues += SubtitleCue(
+                            startMs = start,
+                            endMs = end,
+                            text = body,
+                            style = style,
+                            layer = layer,
+                            order = order++,
+                            fontSize = info.fontSize,
+                            alignment = info.alignment,
+                            marginV = if (eventMarginV != 0) eventMarginV else info.marginV,
+                            kind = kindOf(style),
+                            isDrawing = drawing,
+                        )
                     }
                 }
             }
         }
         return cues
+    }
+
+    private fun cleanAssText(raw: String): String {
+        return raw
+            .replace(assTag, "")
+            .replace("\\N", "\n")
+            .replace("\\n", "\n")
+            .replace("\\h", " ")
+            .trim()
+    }
+
+    /**
+     * ASS 的 \p1 ~ \p9 是矢量绘图模式；这类 Sign 事件去掉标签后只剩
+     * "m 315 48 l ..." 之类的路径坐标，直接当字幕会显示一大串数字。
+     */
+    private fun isDrawing(raw: String): Boolean {
+        var mode = 0
+        assDrawingTag.findAll(raw).forEach { match ->
+            mode = match.groupValues[1].toIntOrNull() ?: 0
+        }
+        return mode > 0
+    }
+
+    private fun kindOf(style: String): SubtitleKind {
+        val value = style.trim().lowercase()
+        return when {
+            value == "note" || value.startsWith("note") -> SubtitleKind.NOTE
+            value == "sign" || value.startsWith("sign") -> SubtitleKind.SIGN
+            value.startsWith("op") || value.startsWith("ed") -> SubtitleKind.LYRIC
+            else -> SubtitleKind.DIALOGUE
+        }
     }
 
     private fun parseTimestamp(value: String): Long {

@@ -960,8 +960,8 @@ fun PlayerScreen(
                 )
             }
 
-            val cue = subtitleTrack?.textAt(positionMs + subtitleDelayMs)
-            if (cue != null && !isInPip) {
+            val subtitleLines = subtitleTrack?.linesAt(positionMs + subtitleDelayMs)
+            if (subtitleLines != null && subtitleLines.isNotEmpty() && !isInPip) {
                 // position=0 → 贴底（距底 12dp，基本贴着手机底部）；1 → 距顶 96dp。
                 // 负数继续向下压（最小 -0.3，最多下移约 29dp），允许把字幕压到屏幕边缘。
                 val position = subtitlePosition.coerceIn(-0.3f, 1f)
@@ -969,27 +969,43 @@ fun PlayerScreen(
                 val travel = (layerHeight - baseBottom - 96.dp).coerceAtLeast(0.dp)
                 val lift = travel * position.coerceAtLeast(0f)
                 val down = if (position < 0f) 96.dp * (-position) else 0.dp
-                Text(
-                    text = cue,
-                    color = Color.White.copy(alpha = subtitleAlpha.coerceIn(0f, 1f)),
-                    fontSize = (17f * subtitleScale).sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center,
-                    style = LocalTextStyle.current.copy(
-                        // 亮场景下纯白字幕会糊成一片，加一层轻描边阴影
-                        shadow = androidx.compose.ui.graphics.Shadow(
-                            color = Color.Black.copy(alpha = 0.75f),
-                            offset = Offset(0f, 2f),
-                            blurRadius = 6f,
-                        ),
-                    ),
+                val primaryFontSize = subtitleLines.maxOf { it.fontSize }.takeIf { it > 0f } ?: 0f
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .offset(y = down)
                         .padding(horizontal = 28.dp)
                         .padding(top = 12.dp, bottom = baseBottom + lift),
-                )
+                ) {
+                    subtitleLines.forEach { line ->
+                        // ASS 里中文 80 / 日文 50 这类主次字号差按比例保留；
+                        // 单语字幕或 SRT/VTT 没有样式信息时保持原字号。
+                        val lineScale = if (primaryFontSize > 0f && line.fontSize > 0f) {
+                            (line.fontSize / primaryFontSize).coerceIn(0.75f, 1f)
+                        } else {
+                            1f
+                        }
+                        Text(
+                            text = line.text,
+                            color = Color.White.copy(alpha = subtitleAlpha.coerceIn(0f, 1f)),
+                            fontSize = (17f * subtitleScale * lineScale).sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            style = LocalTextStyle.current.copy(
+                                // 亮场景下纯白字幕会糊成一片，加一层轻描边阴影
+                                shadow = androidx.compose.ui.graphics.Shadow(
+                                    color = Color.Black.copy(alpha = 0.75f),
+                                    offset = Offset(0f, 2f),
+                                    blurRadius = 6f,
+                                ),
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
         }
         GlasmioBackdropProvider(backdrop = playerBackdrop) {

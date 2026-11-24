@@ -1,6 +1,16 @@
 # 更新记录
 
-> 从早期版本到 1.4.50 的开发记录；最新功能与构建方式以 README 为准。
+> 从早期版本到 1.4.51 的开发记录；最新功能与构建方式以 README 为准。
+
+**v1.4.51（2026-11-24）· 双语 ASS 同刻多事件合并 + 矢量绘图过滤**
+
+- 根因：`SubtitleCue` 只有 start/end/text，`textAt()` 二分查找只返回第一条命中事件。SweetSub 这类双语 ASS 把中文、日文写成同一时刻两条 Dialogue（`Text - CN` / `Text - JP`，靠 MarginV 分上下），播放器每次只取到其中一条，看起来就像“一句中文、一句日文”。
+- 解析器现在读取 `[V4+ Styles]` 样式表，保留 Style / Layer / MarginV / Alignment / FontSize，并按 `[Events] Format` 动态定位字段。
+- 同一时刻收集所有活动事件，按 Alignment + MarginV 排成从上到下：底部字幕 CN（MarginV 50）在上、JP（MarginV 10）在下；顶部字幕同理。
+- 渲染从单行 `Text` 改成按行 `Column`，中文保持主字号，日文按原样式比例缩到 0.75×，两种语言同时显示。
+- 过滤 `\p1`~`\p9` 矢量绘图事件，避免 Sign 的 `m ... l ...` 路径坐标被当成字幕文本；有对白时优先显示对白，Note 不显示。
+- 修复 ASS `Dialogue` 按逗号切分时 `limit = textField + 2` 把 Text 里第一个英文逗号之后截断的隐藏 bug；改为 `textField + 1`。
+- 单语 ASS、SRT / VTT 行为不变；OP / ED 歌词仍按原逻辑显示。
 
 **v1.4.50（2026-11-24）· 去掉合成「已导入字幕」+ 字幕面板自动展开 + 上下集自动关联**
 

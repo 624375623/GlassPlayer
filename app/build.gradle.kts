@@ -12,8 +12,8 @@ android {
         applicationId = "com.glassplayer"
         minSdk = 33
         targetSdk = 37
-        versionCode = 125
-        versionName = "1.4.50"
+        versionCode = 126
+        versionName = "1.4.51"
     }
 
     buildTypes {
