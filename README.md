@@ -13,6 +13,7 @@
 - 最低系统：Android 13（API 33）
 - 编译 / 目标：API 37
 - 当前版本：1.4.50（versionCode 125）
+- 仓库地址：https://github.com/624375623/GlassPlayer
 
 ## 功能
 
@@ -61,6 +62,11 @@
 - Glasmio 液态玻璃主题，深色 / 浅色 / 跟随系统
 - 底部导航弹簧回弹，切换页面不跳变
 - 沉浸式全屏、横竖屏、画中画、屏幕常亮
+
+## 下载
+
+- GitHub Releases：https://github.com/624375623/GlassPlayer/releases/latest
+- 当前提供的 `GlassPlayer-1.4.50-release.apk` 使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
 
 ## 构建
 
