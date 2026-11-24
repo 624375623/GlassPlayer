@@ -119,6 +119,14 @@ class SettingsStore(context: Context) {
         get() = prefs.getFloat("subtitle_position", 0f)
         set(value) = prefs.edit().putFloat("subtitle_position", value).apply()
 
+    /**
+     * 双语字幕语言过滤：空字符串 = 全部，否则存 SubtitleLanguage.name
+     * （CHINESE / JAPANESE / ENGLISH）。切换到没有该语言的字幕时会自动回到全部。
+     */
+    var subtitleLanguageFilter: String
+        get() = prefs.getString("subtitle_language_filter", "") ?: ""
+        set(value) = prefs.edit().putString("subtitle_language_filter", value).apply()
+
     var autoOrientation: Boolean
         get() = prefs.getBoolean("auto_orientation", true)
         set(value) = prefs.edit().putBoolean("auto_orientation", value).apply()

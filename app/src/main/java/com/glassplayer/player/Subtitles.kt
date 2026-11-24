@@ -5,6 +5,13 @@ import android.net.Uri
 
 enum class SubtitleKind { DIALOGUE, LYRIC, SIGN, NOTE }
 
+enum class SubtitleLanguage(val label: String) {
+    CHINESE("中文"),
+    JAPANESE("日语"),
+    ENGLISH("英语"),
+    OTHER("其他"),
+}
+
 /**
  * 一条 ASS / SRT / VTT 字幕事件。
  *
@@ -24,6 +31,7 @@ data class SubtitleCue(
     val marginV: Int = 0,
     val kind: SubtitleKind = SubtitleKind.DIALOGUE,
     val isDrawing: Boolean = false,
+    val language: SubtitleLanguage = SubtitleLanguage.OTHER,
 )
 
 data class SubtitleLine(
@@ -31,6 +39,7 @@ data class SubtitleLine(
     val style: String = "",
     val fontSize: Float = 0f,
     val alignment: Int = 2,
+    val language: SubtitleLanguage = SubtitleLanguage.OTHER,
 )
 
 data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
@@ -38,12 +47,30 @@ data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
     private val maxDurationMs = cues.maxOfOrNull { (it.endMs - it.startMs).coerceAtLeast(0L) } ?: 0L
 
     /**
+     * 文件里实际出现的字幕语言，用于字幕面板决定是否显示“全部 / 中文 / 日语”选择。
+     * 有对白时只看对白，避免片头中文署名把日语单语片误判成双语。
+     */
+    val languages: List<SubtitleLanguage> = run {
+        val dialogue = cues.filter {
+            it.kind == SubtitleKind.DIALOGUE && !it.isDrawing && it.language != SubtitleLanguage.OTHER
+        }
+        val source = dialogue.ifEmpty {
+            cues.filter {
+                it.kind != SubtitleKind.NOTE && !it.isDrawing && it.language != SubtitleLanguage.OTHER
+            }
+        }
+        source.map { it.language }.distinct().sortedBy { it.ordinal }
+    }
+
+    /**
      * 返回当前时刻所有应显示的字幕行，按画面上的从上到下排序。
      *
      * 旧实现用二分查找只返回第一条命中的 cue，同一时刻的中文 / 日文事件只能显示一条；
      * 这里先定位到当前位置，再回看所有仍在有效期内的重叠事件，合并成多行。
+     *
+     * [onlyLanguage] 非空时只保留该语言；选择“日语”不会再把中文行混进来。
      */
-    fun linesAt(positionMs: Long): List<SubtitleLine> {
+    fun linesAt(positionMs: Long, onlyLanguage: SubtitleLanguage? = null): List<SubtitleLine> {
         if (cues.isEmpty()) return emptyList()
         val anchor = firstIndexAfter(positionMs) - 1
         if (anchor < 0) return emptyList()
@@ -58,12 +85,18 @@ data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
             }
             index--
         }
-        return selectLines(active)
+        val visible = if (onlyLanguage == null) {
+            active
+        } else {
+            active.filter { it.language == onlyLanguage }
+        }
+        if (visible.isEmpty()) return emptyList()
+        return selectLines(visible)
     }
 
     /** 兼容旧调用点：把同一时刻的多条活动字幕合成一个多行字符串。 */
-    fun textAt(positionMs: Long): String? {
-        val lines = linesAt(positionMs)
+    fun textAt(positionMs: Long, onlyLanguage: SubtitleLanguage? = null): String? {
+        val lines = linesAt(positionMs, onlyLanguage)
         if (lines.isEmpty()) return null
         return lines.joinToString("\n") { it.text }
     }
@@ -110,7 +143,7 @@ data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
             .sortedWith(
                 compareBy<SubtitleCue> { verticalRank(it.alignment) }
                     .thenBy { if (it.alignment in 7..9) it.marginV else -it.marginV }
-                    .thenBy { languageRank(it.style) }
+                    .thenBy { languageRank(it.language) }
                     .thenBy { it.order },
             )
             .map {
@@ -119,6 +152,7 @@ data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
                     style = it.style,
                     fontSize = it.fontSize,
                     alignment = it.alignment,
+                    language = it.language,
                 )
             }
             // 中英 / 中日文完全相同的歌词只留一行（例如 "Shall we dance"）
@@ -133,15 +167,11 @@ data class SubtitleTrack(val name: String, val cues: List<SubtitleCue>) {
         else -> 2
     }
 
-    private fun languageRank(style: String): Int {
-        val value = style.lowercase()
-        return when {
-            value.endsWith("cn") || value.contains(" chs") || value.contains("zh") ||
-                value.contains("chi") -> 0
-            value.endsWith("jp") || value.contains(" ja") -> 2
-            value.endsWith("en") || value.contains(" eng") -> 3
-            else -> 1
-        }
+    private fun languageRank(language: SubtitleLanguage): Int = when (language) {
+        SubtitleLanguage.CHINESE -> 0
+        SubtitleLanguage.JAPANESE -> 1
+        SubtitleLanguage.ENGLISH -> 2
+        SubtitleLanguage.OTHER -> 3
     }
 
     private companion object {
@@ -169,6 +199,10 @@ object SubtitleParser {
     // 只转义开头的 \{ 会在编译时抛 PatternSyntaxException，导致 object 初始化崩溃
     private val assTag = Regex("""\{[^}]*\}""")
     private val assDrawingTag = Regex("""\\p(\d+)""")
+    private val kanaScript = Regex("[\u3040-\u30FF\u31F0-\u31FF\uFF66-\uFF9D]")
+    private val hanScript = Regex("[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
+    private val latinScript = Regex("[A-Za-z]")
+    private val styleTokenSplit = Regex("[^a-z]+")
 
     fun read(context: Context, uri: Uri): Pair<String, String>? {
         val displayName = queryName(context, uri) ?: "external.srt"
@@ -234,6 +268,7 @@ object SubtitleParser {
         val lines = text.split('\n')
         val cues = ArrayList<SubtitleCue>()
         var index = 0
+        var order = 0
         while (index < lines.size) {
             val line = lines[index].trim()
             val match = simpleTimeLine.find(line) ?: run {
@@ -255,7 +290,20 @@ object SubtitleParser {
                 index++
             }
             if (start >= 0 && end > start) {
-                cues += SubtitleCue(start, end, builder.toString())
+                // SRT / VTT 的双语通常写在一个 cue 的多行里；拆成独立行后
+                // 才能分别识别“中文行 / 日语行”，并按语言单独开关。
+                builder.toString().split('\n')
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .forEach { cueText ->
+                        cues += SubtitleCue(
+                            startMs = start,
+                            endMs = end,
+                            text = cueText,
+                            order = order++,
+                            language = detectLanguage("", cueText),
+                        )
+                    }
             }
         }
         return cues
@@ -347,6 +395,7 @@ object SubtitleParser {
                             marginV = if (eventMarginV != 0) eventMarginV else info.marginV,
                             kind = kindOf(style),
                             isDrawing = drawing,
+                            language = detectLanguage(style, body),
                         )
                     }
                 }
@@ -383,6 +432,35 @@ object SubtitleParser {
             value == "sign" || value.startsWith("sign") -> SubtitleKind.SIGN
             value.startsWith("op") || value.startsWith("ed") -> SubtitleKind.LYRIC
             else -> SubtitleKind.DIALOGUE
+        }
+    }
+
+    /**
+     * 语言识别优先相信字幕样式名（Text - CN / Text - JP / OP - EN），
+     * 没有样式信息时再按文字脚本判断：假名 → 日语，汉字 → 中文，拉丁字母 → 英语。
+     */
+    private fun detectLanguage(style: String, text: String): SubtitleLanguage {
+        styleLanguage(style)?.let { return it }
+        return when {
+            kanaScript.containsMatchIn(text) -> SubtitleLanguage.JAPANESE
+            hanScript.containsMatchIn(text) -> SubtitleLanguage.CHINESE
+            latinScript.containsMatchIn(text) -> SubtitleLanguage.ENGLISH
+            else -> SubtitleLanguage.OTHER
+        }
+    }
+
+    private fun styleLanguage(style: String): SubtitleLanguage? {
+        val tokens = style.lowercase().split(styleTokenSplit).filter { it.isNotEmpty() }
+        val chinese = tokens.any {
+            it in setOf("cn", "chs", "cht", "zh", "chi", "zho", "sc", "tc", "chinese")
+        }
+        val japanese = tokens.any { it in setOf("jp", "ja", "jpn", "japanese") }
+        val english = tokens.any { it in setOf("en", "eng", "english") }
+        return when {
+            chinese && !japanese && !english -> SubtitleLanguage.CHINESE
+            japanese && !chinese && !english -> SubtitleLanguage.JAPANESE
+            english && !chinese && !japanese -> SubtitleLanguage.ENGLISH
+            else -> null
         }
     }
 

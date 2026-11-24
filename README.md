@@ -12,7 +12,7 @@
 - 包名：`com.glassplayer`
 - 最低系统：Android 13（API 33）
 - 编译 / 目标：API 37
-- 当前版本：1.4.51（versionCode 126）
+- 当前版本：1.4.52（versionCode 127）
 - 仓库地址：https://github.com/624375623/GlassPlayer
 
 ## 功能
@@ -34,6 +34,7 @@
 ### 字幕
 - 自研 SRT / VTT / ASS / SSA 解析，字号、位置、透明度、延迟可调
 - ASS 双语同刻多事件合并：中文 / 日文两条 Dialogue 按样式 MarginV 叠成两行，不再只显示一条；矢量绘图 Sign 自动过滤
+- 双语字幕语言识别：自动识别中文 / 日语 / 英语，字幕面板可切换「全部 / 中文 / 日语」
 - 字幕位置支持负值，可继续向下压到画面底部之外
 - 每个视频单独记忆字幕文件；关闭字幕后不会在下次打开时反复弹出
 - 支持通过 SAF 导入**多个字幕文件夹**，递归扫描、持久授权
@@ -67,7 +68,7 @@
 ## 下载
 
 - GitHub Releases：https://github.com/624375623/GlassPlayer/releases/latest
-- 当前提供的 `GlassPlayer-1.4.51-release.apk` 使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
+- 当前提供的 `GlassPlayer-1.4.52-release.apk` 使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
 
 ## 构建
 

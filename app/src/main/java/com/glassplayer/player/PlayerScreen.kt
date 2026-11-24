@@ -421,6 +421,23 @@ fun PlayerScreen(
     var subtitlePosition by remember {
         mutableStateOf(settings.subtitlePosition.coerceIn(-0.3f, 1f))
     }
+    // null = 全部；非空时只显示选中的语言。全局记忆，切到没有该语言的字幕会自动回全部。
+    var subtitleOnlyLanguage by remember {
+        mutableStateOf(
+            settings.subtitleLanguageFilter
+                .takeIf { it.isNotBlank() }
+                ?.let { runCatching { SubtitleLanguage.valueOf(it) }.getOrNull() },
+        )
+    }
+
+    LaunchedEffect(subtitleTrack) {
+        val track = subtitleTrack ?: return@LaunchedEffect
+        val selected = subtitleOnlyLanguage ?: return@LaunchedEffect
+        if (selected !in track.languages) {
+            subtitleOnlyLanguage = null
+            settings.subtitleLanguageFilter = ""
+        }
+    }
 
     var showSpeedSheet by remember { mutableStateOf(false) }
     var showAudioSheet by remember { mutableStateOf(false) }
@@ -960,7 +977,10 @@ fun PlayerScreen(
                 )
             }
 
-            val subtitleLines = subtitleTrack?.linesAt(positionMs + subtitleDelayMs)
+            val subtitleLines = subtitleTrack?.linesAt(
+                positionMs + subtitleDelayMs,
+                subtitleOnlyLanguage,
+            )
             if (subtitleLines != null && subtitleLines.isNotEmpty() && !isInPip) {
                 // position=0 → 贴底（距底 12dp，基本贴着手机底部）；1 → 距顶 96dp。
                 // 负数继续向下压（最小 -0.3，最多下移约 29dp），允许把字幕压到屏幕边缘。
@@ -1904,6 +1924,64 @@ fun PlayerScreen(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            subtitleTrack?.let { track ->
+                when {
+                    track.languages.size >= 2 -> {
+                        Column(
+                            Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "字幕语言",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                )
+                                Text(
+                                    "识别到 ${track.languages.joinToString(" + ") { it.label }}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.48f),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                GlassPill(
+                                    text = "全部",
+                                    emphasized = subtitleOnlyLanguage == null,
+                                    onClick = {
+                                        subtitleOnlyLanguage = null
+                                        settings.subtitleLanguageFilter = ""
+                                    },
+                                )
+                                track.languages.forEach { language ->
+                                    GlassPill(
+                                        text = language.label,
+                                        emphasized = subtitleOnlyLanguage == language,
+                                        onClick = {
+                                            subtitleOnlyLanguage = language
+                                            settings.subtitleLanguageFilter = language.name
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    track.languages.size == 1 -> {
+                        Text(
+                            text = "字幕语言 · ${track.languages.first().label}（单语）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.42f),
+                        )
+                    }
+                }
+            }
             SheetRow(title = "选择字幕文件（SRT / VTT / ASS）", selected = false) {
                 subtitleLauncher.launch(
                     arrayOf(
