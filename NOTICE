@@ -1,0 +1,27 @@
+GlassPlayer
+Copyright 2026 GlassPlayer contributors
+
+This product includes software developed by third parties. The following
+components are used under the Apache License, Version 2.0:
+
+- AndroidX Media3 / ExoPlayer
+  Copyright The Android Open Source Project
+  https://github.com/androidx/media
+
+- Glasmio
+  Copyright NEORUAA and contributors
+  https://github.com/NEORUAA/Glasmio
+
+- Jetpack Compose, AndroidX Core, AndroidX Activity
+  Copyright The Android Open Source Project
+  https://developer.android.com/jetpack/androidx
+
+- Kotlin standard library and Gradle
+  Copyright JetBrains s.r.o. and Gradle, Inc.
+  https://kotlinlang.org / https://gradle.org
+
+The local file app/libs/media3-exoplayer-hls-1.11.1.aar is an unmodified copy
+of the official AndroidX Media3 HLS artifact and is covered by the same
+Apache License 2.0.
+
+A copy of the Apache License 2.0 is included in the LICENSE file.

@@ -1,0 +1,34 @@
+# 构建产物
+build/
+app/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Gradle / Kotlin
+.gradle/
+.kotlin/
+gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+
+# 本地配置与密钥
+local.properties
+*.jks
+*.keystore
+keystore.properties
+signing.properties
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 系统
+.DS_Store
+Thumbs.db
