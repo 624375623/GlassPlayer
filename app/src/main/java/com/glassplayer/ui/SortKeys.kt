@@ -19,8 +19,12 @@ internal object SortKeys {
 
     private val collator: Collator = Collator.getInstance(Locale.CHINA)
 
-    private val hanToLatin: android.icu.text.Transliterator? = runCatching {
-        android.icu.text.Transliterator.getInstance("Han-Latin")
+    private val hanToLatin: Any? = runCatching {
+        // android.icu.text.Transliterator 是 API 29 才加入的类，Android 9 直接
+        // 引用会在类加载阶段触发 NoClassDefFoundError。这里用反射拿实例，
+        // 低版本拿不到就退回首字符排序，不影响启动。
+        val clazz = Class.forName("android.icu.text.Transliterator")
+        clazz.getMethod("getInstance", String::class.java).invoke(null, "Han-Latin")
     }.getOrNull()
 
     private val NUMBER = Regex("\\d+")
@@ -51,7 +55,11 @@ internal object SortKeys {
 
     /** 汉字转拉丁后取首字母；Han-Latin 给的是带声调拼音（如 ān），先 NFD 拆成基本字母。 */
     private fun hanInitial(text: String): Char? {
-        val latin = hanToLatin?.transliterate(text) ?: return null
+        val transliterator = hanToLatin ?: return null
+        val latin = runCatching {
+            transliterator.javaClass.getMethod("transliterate", String::class.java)
+                .invoke(transliterator, text) as? String
+        }.getOrNull() ?: return null
         val decomposed = java.text.Normalizer.normalize(latin, java.text.Normalizer.Form.NFD)
         return decomposed.firstOrNull { it in 'a'..'z' || it in 'A'..'Z' }?.uppercaseChar()
     }

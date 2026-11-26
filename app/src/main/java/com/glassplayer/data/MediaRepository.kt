@@ -2,12 +2,15 @@ package com.glassplayer.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.os.Build
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** Reads the device video library through MediaStore. */
 class MediaRepository(private val context: Context) {
+
+    private val legacyStorage = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
     suspend fun loadVideos(): List<VideoItem> = withContext(Dispatchers.IO) {
         val projection = arrayOf(
@@ -20,7 +23,13 @@ class MediaRepository(private val context: Context) {
             MediaStore.Video.Media.HEIGHT,
             MediaStore.Video.Media.BUCKET_ID,
             MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
-            MediaStore.Video.Media.RELATIVE_PATH,
+            // RELATIVE_PATH 是 API 29 才有的列；Android 9 查询它会直接报未知列。
+            // API 28 用 DATA 绝对路径推导目录，API 29+ 仍用 RELATIVE_PATH。
+            if (legacyStorage) {
+                MediaStore.Video.Media.DATA
+            } else {
+                MediaStore.Video.Media.RELATIVE_PATH
+            },
             MediaStore.Video.Media.MIME_TYPE,
         )
 
@@ -41,18 +50,31 @@ class MediaRepository(private val context: Context) {
             val dateIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.DATE_ADDED)
             val widthIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
             val heightIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
-            val bucketIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_ID)
-            val bucketNameIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
-            val pathIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.RELATIVE_PATH)
+            val bucketIndex = c.getColumnIndex(MediaStore.Video.Media.BUCKET_ID)
+            val bucketNameIndex = c.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+            val pathIndex = c.getColumnIndex(
+                if (legacyStorage) MediaStore.Video.Media.DATA
+                else MediaStore.Video.Media.RELATIVE_PATH,
+            )
             val mimeIndex = c.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
 
             while (c.moveToNext()) {
                 val id = c.getLong(idIndex)
                 val displayName = c.getString(nameIndex) ?: "未命名视频"
-                val relative = c.getString(pathIndex)?.trimEnd('/') ?: ""
-                val folder = relative.ifBlank {
-                    c.getString(bucketNameIndex) ?: "其他"
+                val bucketName = bucketNameIndex.takeIf { it >= 0 }
+                    ?.let { c.getString(it) }
+                    ?.takeIf { it.isNotBlank() }
+                    ?: "其他"
+                val rawPath = pathIndex.takeIf { it >= 0 }?.let { c.getString(it) }.orEmpty()
+                val relative = if (legacyStorage) {
+                    legacyRelativePath(rawPath)
+                } else {
+                    rawPath.trimEnd('/')
                 }
+                val folder = relative.ifBlank { bucketName }
+                val folderKey = bucketIndex.takeIf { it >= 0 }
+                    ?.let { c.getLong(it) }
+                    ?: folder.hashCode().toLong()
                 items += VideoItem(
                     id = id,
                     uri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id).toString(),
@@ -62,14 +84,33 @@ class MediaRepository(private val context: Context) {
                     dateAddedSec = c.getLong(dateIndex),
                     width = c.getInt(widthIndex),
                     height = c.getInt(heightIndex),
-                    bucketId = c.getLong(bucketIndex),
+                    bucketId = folderKey,
                     folderName = folder,
-                    relativePath = c.getString(pathIndex) ?: "",
+                    relativePath = relative,
                     mimeType = c.getString(mimeIndex) ?: "video/*",
                 )
             }
         }
         items
+    }
+
+    /**
+     * Android 9 没有 RELATIVE_PATH。把 MediaStore.DATA 的绝对路径裁成
+     * 「DCIM/Camera」这种相对目录，详情页和文件夹分组都能继续用。
+     */
+    private fun legacyRelativePath(absolute: String): String {
+        if (absolute.isBlank()) return ""
+        val path = absolute.trim()
+        val markers = listOf(
+            "/storage/emulated/0/",
+            "/storage/self/primary/",
+            "/emulated/0/",
+            "/sdcard/",
+        )
+        val relative = markers.firstOrNull { path.contains(it) }
+            ?.let { path.substringAfter(it) }
+            ?: path.trimStart('/')
+        return relative.substringBeforeLast('/', "")
     }
 
     fun foldersOf(videos: List<VideoItem>): List<VideoFolder> = videos

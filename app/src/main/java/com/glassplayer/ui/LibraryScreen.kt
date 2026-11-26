@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import java.io.File
 import androidx.activity.compose.BackHandler
@@ -713,12 +714,7 @@ fun LibraryScreen(
                                     }
                                 },
                                 onRequest = {
-                                    permissionLauncher.launch(
-                                        arrayOf(
-                                            Manifest.permission.READ_MEDIA_VIDEO,
-                                            Manifest.permission.POST_NOTIFICATIONS,
-                                        ),
-                                    )
+                                    permissionLauncher.launch(requiredVideoPermissions())
                                 },
                                 modifier = Modifier.align(Alignment.Center),
                             )
@@ -1989,6 +1985,24 @@ private fun LibraryWallpaper(isDark: Boolean, image: ImageBitmap? = null) {
     }
 }
 
+private fun videoPermission(): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_VIDEO
+    } else {
+        // Android 9~12 仍然是存储权限模型，READ_MEDIA_VIDEO 在这些系统上不存在
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+private fun requiredVideoPermissions(): Array<String> {
+    val base = arrayOf(videoPermission())
+    // Android 13 起才有通知运行时权限；低版本不要把它塞进请求数组
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        base + Manifest.permission.POST_NOTIFICATIONS
+    } else {
+        base
+    }
+}
+
 private fun hasVideoPermission(context: Context): Boolean =
-    ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) ==
+    ContextCompat.checkSelfPermission(context, videoPermission()) ==
         PackageManager.PERMISSION_GRANTED

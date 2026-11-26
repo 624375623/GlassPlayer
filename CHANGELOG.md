@@ -1,6 +1,17 @@
 # 更新记录
 
-> 从早期版本到 1.4.52 的开发记录；最新功能与构建方式以 README 为准。
+> 从早期版本到 1.4.53 的开发记录；最新功能与构建方式以 README 为准。
+
+**v1.4.53（2026-11-26）· Android 9+ 兼容版（独立安装包）**
+
+- 新增 `-Pandroid9=true` 条件构建。默认构建保持 `com.glassplayer` / `minSdk 33` / versionCode 129 / 1.4.53；安卓 9 版为 `com.glassplayer.android9` / `minSdk 28` / versionCode 129 / `1.4.53-android9`，两个包可同时安装。
+- 根因不是“把 minSdk 改成 28”就行：Glasmio 0.1.2 的 5 个 AAR 清单全部是 `minSdkVersion 33`，`glasmio-glass` 还直接依赖 `RenderEffect`（API 31）、`RuntimeShader`（API 33）、`RenderNode`（API 29）。
+- 安卓 9 版不加载任何 Glasmio AAR，改由 `app/src/compat/java/io/github/neoruaa/glasmio/` 提供同包名、同函数名的纯 Compose 实现：`GlasmioTheme` / `GlassColors` / `GlassSurface` / `GlasmioBackdropHost` / `GlasmioNavigationBar` / `GlasmioButton` / `GlasmioIconButton` / `SfIcon` / `GlasmioAdaptiveSlider` 等。现有页面文件不改 import / 调用即可编译。
+- 视觉降级：玻璃卡片改成半透明纯色 + 1dp 描边，不做实时采样和模糊；SF Symbols 用 Material 核心图标或单色字符兜底。
+- Android 9 存储适配：API 28~32 申请 `READ_EXTERNAL_STORAGE`，不再请求不存在的 `READ_MEDIA_VIDEO`；媒体库在 API 28 用 `MediaStore.Video.Media.DATA`，把 `/storage/emulated/0/...` 裁成 `DCIM/Camera`；API 29+ 仍走 `RELATIVE_PATH`。同目录弹幕文件在 API 28 用 `DATA LIKE "$parent/$base.%"` 查找。
+- Android 9 缺失 API 适配：`android.icu.text.Transliterator` 改反射，低版本自动退回首字符排序；`ContentResolver.loadThumbnail` 在 API 28 跳过，回退 `MediaMetadataRetriever` 取首帧；Media3 `UnstableApi` 补 opt-in 标注。
+- 双语字幕能力不变：ASS 同刻多事件按 `Alignment + MarginV` 合并、CN/JP 双行、语言识别与「全部 / 中文 / 日语 / 英语」过滤两版完全一致。
+- 验证：`lintDebug -Pandroid9=true` 为 0 errors / 104 warnings / 11 hints，`[NewApi]` 0 条；安卓 9 release 6,109,805 字节，minSdk 28，targetSdk 37；现代版 release 12,345,460 字节，minSdk 33。无 Android 9 真机 / 模拟器，未做运行验收。
 
 **v1.4.52（2026-11-24）· 双语字幕语言识别 + 全部 / 中文 / 日语切换**
 

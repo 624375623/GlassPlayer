@@ -20,13 +20,20 @@ object ThumbnailLoader {
     suspend fun load(context: Context, item: VideoItem, width: Int = 480): Bitmap? =
         withContext(Dispatchers.IO) {
             cache.get(item.uri)?.let { return@withContext it }
-            val bitmap = runCatching {
-                context.contentResolver.loadThumbnail(
-                    item.uriValue,
-                    Size(width, (width * 9 / 16).coerceAtLeast(1)),
-                    null,
-                )
-            }.getOrNull() ?: runCatching {
+            // ContentResolver.loadThumbnail 是 API 29 才有的；Android 9 直接走
+            // MediaMetadataRetriever，首帧解码虽然慢一点，但不会在查询时抛 NoSuchMethod。
+            val storeThumb = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                runCatching {
+                    context.contentResolver.loadThumbnail(
+                        item.uriValue,
+                        Size(width, (width * 9 / 16).coerceAtLeast(1)),
+                        null,
+                    )
+                }.getOrNull()
+            } else {
+                null
+            }
+            val bitmap = storeThumb ?: runCatching {
                 val retriever = MediaMetadataRetriever()
                 try {
                     retriever.setDataSource(context, item.uriValue)

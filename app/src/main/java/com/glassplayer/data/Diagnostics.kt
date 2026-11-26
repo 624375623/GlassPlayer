@@ -29,22 +29,40 @@ object Diagnostics {
             var cameraUri: String? = null
             val bucketCounts = LinkedHashMap<String, Int>()
             runCatching {
-                context.contentResolver.query(
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                val legacy = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q
+                val projection = if (legacy) {
+                    arrayOf(
+                        MediaStore.Video.Media._ID,
+                        MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
+                        MediaStore.Video.Media.DATA,
+                    )
+                } else {
                     arrayOf(
                         MediaStore.Video.Media._ID,
                         MediaStore.Video.Media.BUCKET_DISPLAY_NAME,
                         MediaStore.Video.Media.RELATIVE_PATH,
-                    ),
+                    )
+                }
+                context.contentResolver.query(
+                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                    projection,
                     null,
                     null,
                     null,
                 )?.use { cursor ->
+                    val bucketIndex = cursor.getColumnIndex(MediaStore.Video.Media.BUCKET_DISPLAY_NAME)
+                    val pathIndex = cursor.getColumnIndex(
+                        if (legacy) MediaStore.Video.Media.DATA
+                        else MediaStore.Video.Media.RELATIVE_PATH,
+                    )
                     while (cursor.moveToNext()) {
                         total += 1
-                        val bucket = cursor.getString(1) ?: "未知"
+                        val bucket = bucketIndex.takeIf { it >= 0 }
+                            ?.let { cursor.getString(it) }
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "未知"
                         bucketCounts[bucket] = (bucketCounts[bucket] ?: 0) + 1
-                        val path = cursor.getString(2).orEmpty()
+                        val path = pathIndex.takeIf { it >= 0 }?.let { cursor.getString(it) }.orEmpty()
                         if (cameraUri == null &&
                             (bucket.equals("Camera", true) || path.contains("DCIM/Camera"))
                         ) {

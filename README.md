@@ -4,15 +4,15 @@
 
 播放内核使用 [Media3 / ExoPlayer](https://github.com/androidx/media)，界面使用 Kotlin + Jetpack Compose，玻璃态控件来自开源库 [Glasmio](https://github.com/NEORUAA/Glasmio)。
 
-![Android](https://img.shields.io/badge/Android-13%2B-3DDC84?logo=android&logoColor=white)
+![Android](https://img.shields.io/badge/Android-9%2B%20%2F%2013%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?logo=kotlin&logoColor=white)
 ![Media3](https://img.shields.io/badge/Media3-1.11.1-FF6F00)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-- 包名：`com.glassplayer`
-- 最低系统：Android 13（API 33）
+- 包名：`com.glassplayer`（现代版） / `com.glassplayer.android9`（安卓 9 兼容版）
+- 最低系统：Android 13（API 33）；另提供 Android 9+（API 28）兼容版
 - 编译 / 目标：API 37
-- 当前版本：1.4.52（versionCode 127）
+- 当前版本：1.4.53（versionCode 129）
 - 仓库地址：https://github.com/624375623/GlassPlayer
 
 ## 功能
@@ -62,13 +62,29 @@
 
 ### 界面与系统
 - Glasmio 液态玻璃主题，深色 / 浅色 / 跟随系统
+- Android 9+ 兼容构建：独立包名、纯 Compose 玻璃卡片降级，可与现代版同时安装
 - 底部导航弹簧回弹，切换页面不跳变
 - 沉浸式全屏、横竖屏、画中画、屏幕常亮
 
 ## 下载
 
 - GitHub Releases：https://github.com/624375623/GlassPlayer/releases/latest
-- 当前提供的 `GlassPlayer-1.4.52-release.apk` 使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
+- `GlassPlayer-1.4.53-release.apk`：现代版，Android 13+，包名 `com.glassplayer`。
+- `GlassPlayer-1.4.53-android9-release.apk`：Android 9+ 兼容版，包名 `com.glassplayer.android9`，可与现代版同时安装。
+- 两个 APK 均使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
+
+### 两个版本的区别
+
+| 项目 | 现代版 | 安卓 9 兼容版 |
+| --- | --- | --- |
+| 包名 | `com.glassplayer` | `com.glassplayer.android9` |
+| 最低系统 | Android 13（API 33） | Android 9（API 28） |
+| 界面 | Glasmio 液态玻璃，实时采样 / 模糊 | 纯 Compose 半透明卡片，无模糊 |
+| 图标 | Glasmio SF Symbols | Material 图标 + 单色字符兜底 |
+| 字幕 | 双语合并、语言识别、语言过滤 | 同左，完全保留 |
+| 安装关系 | 独立 | 独立，可同时安装 |
+
+功能主体一致；兼容版去掉的是 Glasmio 对 `RenderEffect` / `RuntimeShader` 的硬依赖。Gradle 仍使用同一个工程，靠 `-Pandroid9=true` 切换。
 
 ## 构建
 
@@ -85,12 +101,17 @@ export ANDROID_HOME=/path/to/android-sdk
 
 ./gradlew :app:assembleDebug
 ./gradlew :app:assembleRelease
+
+# Android 9+ 兼容版
+./gradlew :app:assembleDebug   -Pandroid9=true
+./gradlew :app:assembleRelease -Pandroid9=true
 ```
 
 国内网络下 `settings.gradle.kts` 已把阿里云 Maven 镜像放在前面；首次构建需要下载依赖。
 
 说明：
 
+- `-Pandroid9=true` 会把 `app/src/compat/java` 加进主源集，并移除全部 Glasmio 依赖；不传该参数时现代版构建行为不变。
 - `app/libs/media3-exoplayer-hls-1.11.1.aar` 是官方 Media3 HLS 模块的本地副本，保证离线构建可用；也可以删掉它，改成 `implementation("androidx.media3:media3-exoplayer-hls:1.11.1")`。
 - Release 构建默认使用 debug 证书签名，只是为了方便侧载体验。**正式分发请配置你自己的 signingConfig**，不要用 debug 证书发布。
 - 没有内置任何账号、Cookie、API Key；网盘登录态只存在设备本地。
@@ -103,6 +124,7 @@ GlassPlayer/
 │  ├─ build.gradle.kts
 │  ├─ proguard-rules.pro
 │  ├─ libs/media3-exoplayer-hls-1.11.1.aar
+│  ├─ src/compat/java/io/github/neoruaa/glasmio/  # 安卓 9 兼容层（仅 -Pandroid9=true 编译）
 │  └─ src/main/
 │     ├─ AndroidManifest.xml
 │     ├─ res/
@@ -143,7 +165,8 @@ GlassPlayer/
 - 网盘登录需要扫码，Cookie 只保存在本机，不会上传。
 - HLS 流播的逐帧步进受分片粒度限制，部分片源只能 0.5 秒步进。
 - 字幕自动关联依赖视频标题与字幕文件名里的集号；没有集号时需要手动选择。
-- 当前只在有限机型上验证过，不同设备的解码器、HDR、杜比能力差异较大。
+- Android 9 兼容版没有 Glasmio 的实时背景采样 / 模糊，改用半透明纯色卡片；SF Symbols 也用 Material 图标或字符兜底，个别图标观感会与现代版不同。
+- 当前只在有限机型上验证过，不同设备的解码器、HDR、杜比能力差异较大；构建环境无 Android 9 真机 / 模拟器，兼容版尚未做安装与运行验收。
 
 ## 参与贡献
 

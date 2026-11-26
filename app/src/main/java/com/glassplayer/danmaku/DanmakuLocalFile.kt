@@ -19,15 +19,21 @@ object DanmakuLocalFile {
 
     fun load(context: Context, videoUri: String): Pair<String, List<Danmaku>>? = runCatching {
         val parsed = Uri.parse(videoUri)
+        val legacy = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q
+        val pathColumn = if (legacy) {
+            MediaStore.Video.Media.DATA
+        } else {
+            MediaStore.Video.Media.RELATIVE_PATH
+        }
         val videoProjection = arrayOf(
-            MediaStore.Video.Media.RELATIVE_PATH,
+            pathColumn,
             MediaStore.Video.Media.DISPLAY_NAME,
         )
-        var relativePath = ""
+        var pathValue = ""
         var displayName: String? = null
         context.contentResolver.query(parsed, videoProjection, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
-                relativePath = cursor.getString(0) ?: ""
+                pathValue = cursor.getString(0) ?: ""
                 displayName = cursor.getString(1)
             }
         }
@@ -39,9 +45,20 @@ object DanmakuLocalFile {
             MediaStore.Files.FileColumns._ID,
             MediaStore.Files.FileColumns.DISPLAY_NAME,
         )
-        val selection = "${MediaStore.Files.FileColumns.RELATIVE_PATH}=? AND " +
-            "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
-        val args = arrayOf(relativePath, "$base.%")
+        val selection: String
+        val args: Array<String>
+        if (legacy) {
+            // Android 9 没有 RELATIVE_PATH：DATA 是视频的绝对路径，
+            // 用它的父目录 + 文件名前缀去同目录找 .xml / .json。
+            val parent = pathValue.substringBeforeLast('/', "")
+            if (parent.isBlank()) return@runCatching null
+            selection = "${MediaStore.Files.FileColumns.DATA} LIKE ?"
+            args = arrayOf("$parent/$base.%")
+        } else {
+            selection = "${MediaStore.Files.FileColumns.RELATIVE_PATH}=? AND " +
+                "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE ?"
+            args = arrayOf(pathValue, "$base.%")
+        }
 
         var result: Pair<String, List<Danmaku>>? = null
         context.contentResolver.query(filesUri, projection, selection, args, null)?.use { cursor ->

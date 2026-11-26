@@ -3,17 +3,34 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// 安卓 9 版走独立条件构建：默认构建仍是现代版，只有显式传 -Pandroid9=true 时才切换。
+// 两个版本使用不同 applicationId，可以同时安装在同一台设备上。
+val android9Build = providers.gradleProperty("android9").orNull == "true"
+
 android {
     namespace = "com.glassplayer"
     compileSdk = 37
     buildToolsVersion = "37.0.0"
 
     defaultConfig {
-        applicationId = "com.glassplayer"
-        minSdk = 33
+        applicationId = if (android9Build) "com.glassplayer.android9" else "com.glassplayer"
+        minSdk = if (android9Build) 28 else 33
         targetSdk = 37
-        versionCode = 127
-        versionName = "1.4.52"
+        versionCode = 129
+        versionName = if (android9Build) "1.4.53-android9" else "1.4.53"
+        manifestPlaceholders["appName"] =
+            if (android9Build) "GlassPlayer 安卓9版" else "GlassPlayer"
+    }
+
+    sourceSets {
+        getByName("main") {
+            // 安卓 9 版不链接 Glasmio（它的 AAR 最低 API 33，且依赖 RenderEffect/RuntimeShader），
+            // 改由这里的同包名兼容实现提供主题、玻璃卡片和基础控件。
+            if (android9Build) {
+                java.srcDir("src/compat/java")
+                kotlin.srcDir("src/compat/java")
+            }
+        }
     }
 
     buildTypes {
@@ -58,11 +75,16 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
 
-    implementation("io.github.neoruaa.glasmio:glasmio-core:0.1.2")
-    implementation("io.github.neoruaa.glasmio:glasmio-glass:0.1.2")
-    implementation("io.github.neoruaa.glasmio:glasmio-icons:0.1.2")
-    implementation("io.github.neoruaa.glasmio:glasmio-ui:0.1.2")
-    implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.2")
+    if (android9Build) {
+        // 兼容层用 Material 核心图标补齐常见图标，避免 Android 9 上 SF Symbols 字体缺失
+        implementation("androidx.compose.material:material-icons-core")
+    } else {
+        implementation("io.github.neoruaa.glasmio:glasmio-core:0.1.2")
+        implementation("io.github.neoruaa.glasmio:glasmio-glass:0.1.2")
+        implementation("io.github.neoruaa.glasmio:glasmio-icons:0.1.2")
+        implementation("io.github.neoruaa.glasmio:glasmio-ui:0.1.2")
+        implementation("io.github.neoruaa.glasmio:glasmio-scaffold:0.1.2")
+    }
 
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     // HLS 模块本地 AAR：用于网盘「流播」的 m3u8 转码地址
