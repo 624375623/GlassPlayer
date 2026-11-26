@@ -12,7 +12,7 @@
 - 包名：`com.glassplayer`（现代版） / `com.glassplayer.android9`（安卓 9 兼容版）
 - 最低系统：Android 13（API 33）；另提供 Android 9+（API 28）兼容版
 - 编译 / 目标：API 37
-- 当前版本：1.4.53（versionCode 129）
+- 当前版本：现代版 1.4.53（versionCode 129）；Android 9 兼容版 1.4.54-android9（versionCode 130）
 - 仓库地址：https://github.com/624375623/GlassPlayer
 
 ## 功能
@@ -70,13 +70,15 @@
 
 - GitHub Releases：https://github.com/624375623/GlassPlayer/releases/latest
 - `GlassPlayer-1.4.53-release.apk`：现代版，Android 13+，包名 `com.glassplayer`。
-- `GlassPlayer-1.4.53-android9-release.apk`：Android 9+ 兼容版，包名 `com.glassplayer.android9`，可与现代版同时安装。
+- `GlassPlayer-1.4.54-android9-release.apk`：Android 9+ 兼容版，包名 `com.glassplayer.android9`，可与现代版同时安装。
 - 两个 APK 均使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
 
 ### 两个版本的区别
 
-| 项目 | 现代版 | 安卓 9 兼容版 |
+| 项目 | 现代版 | Android 9 兼容版 |
 | --- | --- | --- |
+| 版本 | 1.4.53 / 129 | 1.4.54-android9 / 130 |
+| 应用名 | `GlassPlayer` | `GlassPlayer` |
 | 包名 | `com.glassplayer` | `com.glassplayer.android9` |
 | 最低系统 | Android 13（API 33） | Android 9（API 28） |
 | 界面 | Glasmio 液态玻璃，实时采样 / 模糊 | 纯 Compose 半透明卡片，无模糊 |
@@ -84,7 +86,7 @@
 | 字幕 | 双语合并、语言识别、语言过滤 | 同左，完全保留 |
 | 安装关系 | 独立 | 独立，可同时安装 |
 
-功能主体一致；兼容版去掉的是 Glasmio 对 `RenderEffect` / `RuntimeShader` 的硬依赖。Gradle 仍使用同一个工程，靠 `-Pandroid9=true` 切换。
+功能主体一致；兼容版去掉的是 Glasmio 对 `RenderEffect` / `RuntimeShader` 的硬依赖。Gradle 仍使用同一个工程，靠 `-Pandroid9=true` 切换。两个包都显示为 `GlassPlayer`，通过包名区分，可同时安装。
 
 ## 构建
 

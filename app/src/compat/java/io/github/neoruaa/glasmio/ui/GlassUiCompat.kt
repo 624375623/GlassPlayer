@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -99,7 +100,9 @@ fun <T> GlasmioNavigationBar(
     val colors = GlasmioTheme.colors
     Row(
         modifier = modifier
-            .height(compactSize)
+            // Glasmio 原版导航的静止高度是 62dp；之前照搬 compactSize 56dp，
+            // 加上 10sp 文字默认 24sp 行高后，标签会被胶囊底边裁掉一半。
+            .height(62.dp)
             .clip(RoundedCornerShape(28.dp))
             .background(colors.container)
             .padding(horizontal = 4.dp, vertical = 4.dp),
@@ -111,10 +114,12 @@ fun <T> GlasmioNavigationBar(
             Column(
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxHeight()
                     .clip(RoundedCornerShape(22.dp))
                     .clickable { onSelected(item.key) }
                     .padding(vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
                 SfIcon(
                     symbol = item.symbol,
@@ -126,7 +131,11 @@ fun <T> GlasmioNavigationBar(
                     text = item.label,
                     color = if (selected) colors.accent else colors.content.copy(alpha = 0.62f),
                     fontSize = 10.sp,
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    // 原版 NavigationLabelStyle 是 10sp/12sp；不显式给 lineHeight 时
+                    // Material3 会继承 24sp 行高，56dp 的胶囊正好把下半行裁掉。
+                    lineHeight = 12.sp,
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                    maxLines = 1,
                 )
             }
         }

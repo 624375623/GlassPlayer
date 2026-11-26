@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
@@ -36,6 +37,7 @@ fun GlassSurface(
     emphasis: GlassEmphasis = GlassEmphasis.Regular,
     sampleBackdrop: Boolean = true,
     onClick: (() -> Unit)? = null,
+    contentAlignment: Alignment = Alignment.Center,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val colors = GlasmioTheme.colors
@@ -51,6 +53,7 @@ fun GlassSurface(
             .background(container, shape)
             .border(1.dp, colors.subtleStroke, shape)
             .then(clickable),
+        contentAlignment = contentAlignment,
         content = content,
     )
 }
