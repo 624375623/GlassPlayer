@@ -16,8 +16,8 @@ android {
         applicationId = if (android9Build) "com.glassplayer.android9" else "com.glassplayer"
         minSdk = if (android9Build) 28 else 33
         targetSdk = 37
-        versionCode = if (android9Build) 130 else 129
-        versionName = if (android9Build) "1.4.54-android9" else "1.4.53"
+        versionCode = 130
+        versionName = if (android9Build) "1.4.54-android9" else "1.4.54"
         manifestPlaceholders["appName"] = "GlassPlayer"
     }
 
