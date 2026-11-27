@@ -2,6 +2,8 @@
 
 一个 **Android 原生视频播放器**：本地媒体库 + 网盘播放 + 外挂字幕库 + 弹幕 + DLNA 投屏。
 
+> 💻 **桌面版（Windows）已同步开源**：Electron + React 实现在 [`pc/`](pc/) 目录，功能与手机版对齐——夸克网盘扫码登录、网盘视频在线播放、五站资源搜索、失效链接过滤、B 站 / 腾讯弹幕、目录选集、断点续播与播放记录页。安装包见 [Releases](https://github.com/624375623/GlassPlayer/releases)（文件名带 `PC-` 或 `GlassPlayer-*-Portable`）。
+
 播放内核使用 [Media3 / ExoPlayer](https://github.com/androidx/media)，界面使用 Kotlin + Jetpack Compose，玻璃态控件来自开源库 [Glasmio](https://github.com/NEORUAA/Glasmio)。
 
 ![Android](https://img.shields.io/badge/Android-9%2B%20%2F%2013%2B-3DDC84?logo=android&logoColor=white)

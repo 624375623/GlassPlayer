@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+release/
+release-*/
+
+# 打包用的 Electron 原始发行包（体积大，npm install 后可重新获得）
+release-pkg/
+
+# 测试截图与日志
+shot-*.png
+*.log
+
+# 本地环境
+.workbuddy/
+.tmp-userdata-*/
+.env
+.env.local
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini

@@ -1,0 +1,71 @@
+{
+  "name": "glassplayer-pc",
+  "version": "1.0.6",
+  "private": true,
+  "description": "GlassPlayer PC - 夸克网盘 + 全网资源搜索播放器",
+  "author": "GlassPlayer",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"vite\" \"wait-on tcp:5199 && cross-env GP_DEV=http://localhost:5199 electron .\"",
+    "build": "vite build",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --win",
+    "dist:only": "electron-builder --win"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.17",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "39.8.10",
+    "electron-builder": "^26.0.12",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.glassplayer.pc",
+    "productName": "GlassPlayer",
+    "copyright": "GlassPlayer",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "artifactName": "GlassPlayer-${version}-${env.ARCHTAG}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "GlassPlayer",
+      "artifactName": "GlassPlayer-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "GlassPlayer-Portable-${version}.exe"
+    }
+  }
+}
