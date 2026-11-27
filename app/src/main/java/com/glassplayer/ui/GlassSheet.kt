@@ -1,6 +1,7 @@
 package com.glassplayer.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -85,6 +86,11 @@ fun GlassSheet(
     }
 
     if (!rendered) return
+
+    // 返回键先关弹层，而不是直接退出页面/应用。
+    // 以前弹层没有自己的返回回调，允许返回穿透到底下的 Activity，表现就是「在设置里按返回直接退出软件」。
+    // 这里注册在弹层内层，Compose 的返回分发后注册优先，所以弹层一定先吃掉这一次返回。
+    BackHandler(enabled = visible) { onDismissRequest() }
 
     val interaction = remember { MutableInteractionSource() }
 

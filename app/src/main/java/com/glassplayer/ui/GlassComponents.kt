@@ -64,6 +64,24 @@ import io.github.neoruaa.glasmio.glass.GlassSurface
 import io.github.neoruaa.glasmio.icons.SfIcon
 
 /**
+ * 视频卡片（视频框）底板的不透明度。
+ *
+ * 只改卡片底色，标题 / 副标题 / 时长这些文字的 alpha 完全不动 ——
+ * 用户要的是「背景能透出壁纸、字还是实心的」。
+ */
+val LocalCardBackgroundAlpha = androidx.compose.runtime.compositionLocalOf { 1f }
+
+@Composable
+internal fun videoCardBackground(selected: Boolean): Color {
+    val base = GlasmioTheme.colors.elevatedBackground
+    return if (selected) {
+        GlasmioTheme.colors.accent.copy(alpha = 0.22f)
+    } else {
+        base.copy(alpha = base.alpha * LocalCardBackgroundAlpha.current.coerceIn(0f, 1f))
+    }
+}
+
+/**
  * 按压反馈：按下时轻微缩小、松开弹回。
  *
  * 用 spring 而不是 tween，松手有一种「回弹」的手感；缩放只在 graphicsLayer 里改，
@@ -170,10 +188,7 @@ fun VideoRow(
                 scaleY = scale
             }
             .clip(GlasmioTheme.shapes.medium)
-            .background(
-                if (selected) GlasmioTheme.colors.accent.copy(alpha = 0.22f)
-                else GlasmioTheme.colors.elevatedBackground,
-            )
+            .background(videoCardBackground(selected))
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
@@ -284,10 +299,7 @@ fun VideoTile(
                 scaleY = scale
             }
             .clip(GlasmioTheme.shapes.medium)
-            .background(
-                if (selected) GlasmioTheme.colors.accent.copy(alpha = 0.22f)
-                else GlasmioTheme.colors.elevatedBackground,
-            )
+            .background(videoCardBackground(selected))
             .combinedClickable(
                 interactionSource = interaction,
                 indication = null,
@@ -388,7 +400,7 @@ fun FolderRow(
                 scaleY = scale
             }
             .clip(GlasmioTheme.shapes.medium)
-            .background(GlasmioTheme.colors.elevatedBackground)
+            .background(videoCardBackground(selected = false))
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
         Row(
@@ -457,13 +469,19 @@ fun ResumeCard(
     val scale = pressScale(interaction)
     Column(
         modifier = modifier
-            .width(178.dp)
+            // 「继续观看」横排卡片原来 178dp 宽，一屏只能露一张半，显得又大又挤；
+            // 收到 132dp（缩略图 16:9 ≈ 74dp 高），一行能放 2.5 张，字号也一起收小。
+            .width(132.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0x22000000))
+            .clip(RoundedCornerShape(14.dp))
+            .background(
+                Color(0x22000000).let {
+                    it.copy(alpha = it.alpha * LocalCardBackgroundAlpha.current.coerceIn(0f, 1f))
+                },
+            )
             // 之前只有缩放进场动画，漏了点击：整张「继续观看」卡片点了没有任何反应
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
     ) {
@@ -485,12 +503,13 @@ fun ResumeCard(
                 text = durationLabel(item),
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(6.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 5.dp, vertical = 2.dp),
+                    .padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(5.dp))
+                    .padding(horizontal = 4.dp, vertical = 1.dp),
                 style = MaterialTheme.typography.labelSmall,
                 // 缩略图是深色的，浅色主题下用 content 色会变成深灰字压深底，直接看不清
                 color = Color.White,
+                fontSize = 9.sp,
             )
             if (item.durationMs > 0) {
                 Box(
@@ -509,10 +528,10 @@ fun ResumeCard(
                 }
             }
         }
-        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(Modifier.padding(horizontal = 6.dp, vertical = 5.dp), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Text(
                 text = item.title,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                 fontWeight = FontWeight.Medium,
                 color = GlasmioTheme.colors.content,
                 maxLines = 1,
@@ -520,7 +539,7 @@ fun ResumeCard(
             )
             Text(
                 text = "已看到 ${formatDuration(progressMs)}",
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = GlasmioTheme.colors.content.copy(alpha = 0.6f),
             )
         }

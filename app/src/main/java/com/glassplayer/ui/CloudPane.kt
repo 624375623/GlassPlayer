@@ -843,8 +843,12 @@ private fun CloudCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    // 故意不用 GlassSurface：几百行玻璃做实时采样会掉帧，这里用纯色卡片就够了
-    val background = if (isDark) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.62f)
+    // 故意不用 GlassSurface：几百行玻璃做实时采样会掉帧，这里用纯色卡片就够了。
+    // 「视频框背景透明度」只乘在这层白色底板上，文件名 / 大小的文字颜色不动。
+    val baseAlpha = if (isDark) 0.09f else 0.62f
+    val background = Color.White.copy(
+        alpha = baseAlpha * LocalCardBackgroundAlpha.current.coerceIn(0f, 1f),
+    )
     val subtitle = if (file.isDir) "文件夹" else formatSize(file.size)
     if (grid) {
         Column(

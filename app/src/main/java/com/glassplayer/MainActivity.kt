@@ -40,6 +40,8 @@ class MainActivity : ComponentActivity() {
         com.glassplayer.data.DebugLog.installCrashRecorder(this)
         com.glassplayer.data.DebugLog.restoreLastCrash(this)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+        // 实验性全局刷新率：必须在 setContent 之前设好窗口模式，首帧就按目标刷新率合成
+        com.glassplayer.data.RefreshRate.apply(this, SettingsStore(this).refreshRateMode)
 
         setContent {
             val settings = remember { SettingsStore(this@MainActivity) }
@@ -78,6 +80,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 从设置 / 息屏 / 其它应用回来时，窗口属性可能被系统重置，重新按设置挑一次显示模式
+        com.glassplayer.data.RefreshRate.apply(this, SettingsStore(this).refreshRateMode)
         refreshTick.intValue++
     }
 

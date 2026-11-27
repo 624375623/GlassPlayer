@@ -171,6 +171,30 @@ class SettingsStore(context: Context) {
         get() = prefs.getFloat("player_sheet_opacity", 0.72f)
         set(value) = prefs.edit().putFloat("player_sheet_opacity", value.coerceIn(0.35f, 1f)).apply()
 
+    /**
+     * 启动后进入哪个导航页：0 全部 / 1 文件（文件夹）/ 2 收藏 / 3 记录 / 4 网盘 / 5 资源。
+     * 只在启动时读一次，设置里改完标注「下次启动生效」。
+     */
+    var startTab: Int
+        get() = prefs.getInt("start_tab", 1).coerceIn(0, 5)
+        set(value) = prefs.edit().putInt("start_tab", value.coerceIn(0, 5)).apply()
+
+    /**
+     * 视频卡片（视频框）底板的不透明度，0.15 ~ 1.0，默认 1.0 = 和原来完全一致。
+     * 只作用于卡片底色，标题 / 时长 / 副标题文字的透明度不受影响。
+     */
+    var cardBackgroundAlpha: Float
+        get() = prefs.getFloat("card_background_alpha", 1f)
+        set(value) = prefs.edit().putFloat("card_background_alpha", value.coerceIn(0.15f, 1f)).apply()
+
+    /**
+     * 实验性：强制应用运行在固定刷新率。0 = 跟随系统，1 = 90Hz，2 = 120Hz。
+     * 只挑设备真实支持的模式，找不到就保持跟随系统。
+     */
+    var refreshRateMode: Int
+        get() = prefs.getInt("refresh_rate_mode", 0).coerceIn(0, 2)
+        set(value) = prefs.edit().putInt("refresh_rate_mode", value.coerceIn(0, 2)).apply()
+
     /** 按单个视频记住的画面比例，格式 "mode|w|h"；没设置过返回 null。 */
     fun videoAspectOf(key: String): Triple<Int, Int, Int>? {
         if (key.isEmpty()) return null
@@ -322,6 +346,15 @@ class SettingsStore(context: Context) {
         set(value) = prefs.edit().putString("danmaku_block_regex", value).apply()
 
     fun positionOf(uri: String): Long = prefs.getLong("pos_$uri", 0L)
+
+    /**
+     * 标记「这个视频看过」，只写最近播放时间，不改进度。
+     * 用来让刚点开几秒的视频也能进「记录 / 继续观看」，而不是等进度攒够 1 分钟。
+     */
+    fun markPlayed(uri: String) {
+        if (uri.isBlank()) return
+        prefs.edit().putLong("last_played_$uri", System.currentTimeMillis()).apply()
+    }
 
     fun savePosition(uri: String, positionMs: Long) {
         if (positionMs <= 0) return

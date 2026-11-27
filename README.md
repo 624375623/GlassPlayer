@@ -12,7 +12,7 @@
 - 包名：`com.glassplayer`（现代版） / `com.glassplayer.android9`（安卓 9 兼容版）
 - 最低系统：Android 13（API 33）；另提供 Android 9+（API 28）兼容版
 - 编译 / 目标：API 37
-- 当前版本：现代版 1.4.54（versionCode 130）；Android 9 兼容版 1.4.54-android9（versionCode 130）
+- 当前版本：现代版 1.4.55（versionCode 131）；Android 9 兼容版 1.4.55-android9（versionCode 131）
 - 仓库地址：https://github.com/624375623/GlassPlayer
 
 ## 功能
@@ -69,15 +69,15 @@
 ## 下载
 
 - GitHub Releases：https://github.com/624375623/GlassPlayer/releases/latest
-- `GlassPlayer-1.4.54-release.apk`：现代版，Android 13+，包名 `com.glassplayer`。
-- `GlassPlayer-1.4.54-android9-release.apk`：Android 9+ 兼容版，包名 `com.glassplayer.android9`，可与现代版同时安装。
+- `GlassPlayer-1.4.55-release.apk`：现代版，Android 13+，包名 `com.glassplayer`。
+- `GlassPlayer-1.4.55-android9-release.apk`：Android 9+ 兼容版，包名 `com.glassplayer.android9`，可与现代版同时安装。
 - 两个 APK 均使用 debug 证书签名，只用于直接侧载体验；正式分发请按下面的构建说明配置自己的签名。
 
 ### 两个版本的区别
 
 | 项目 | 现代版 | Android 9 兼容版 |
 | --- | --- | --- |
-| 版本 | 1.4.54 / 130 | 1.4.54-android9 / 130 |
+| 版本 | 1.4.55 / 131 | 1.4.55-android9 / 131 |
 | 应用名 | `GlassPlayer` | `GlassPlayer` |
 | 包名 | `com.glassplayer` | `com.glassplayer.android9` |
 | 最低系统 | Android 13（API 33） | Android 9（API 28） |

@@ -37,6 +37,8 @@ class PlayerActivity : ComponentActivity() {
     private var lastPipParams: PictureInPictureParams? = null
 
     private var autoOrientation = true
+    /** 播放中的定时进度落盘任务，null 表示当前没有在跑。 */
+    private var progressTicker: Runnable? = null
     // 播放页「锁定屏幕」期间的方向锁：锁定时按当前方向定死，解锁恢复原来的策略
     private var orientationLocked = false
     private var orientationBeforeLock = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -50,6 +52,8 @@ class PlayerActivity : ComponentActivity() {
             )
         }
         settings = SettingsStore(this)
+        // 实验性全局刷新率：播放页也用同一套窗口显示模式，避免主页 120Hz、播放页回落 60Hz
+        com.glassplayer.data.RefreshRate.apply(this, settings.refreshRateMode)
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         WindowInsetsControllerCompat(window, window.decorView).apply {
@@ -291,8 +295,15 @@ class PlayerActivity : ComponentActivity() {
         rememberPosition()
     }
 
+    override fun onResume() {
+        super.onResume()
+        com.glassplayer.data.RefreshRate.apply(this, settings.refreshRateMode)
+        startProgressTicker()
+    }
+
     override fun onStop() {
         super.onStop()
+        stopProgressTicker()
         rememberPosition()
         DebugLog.record(
             "player",
@@ -306,14 +317,23 @@ class PlayerActivity : ComponentActivity() {
 
     private fun rememberPosition() {
         val controller = viewModel.controller ?: return
-        val uri = controller.currentMediaItem?.mediaId ?: return
-        val position = controller.currentPosition
-        if (uri.isNotBlank() && position > 1000) {
+        val item = controller.currentMediaItem
+        // MediaController 在切集/回收瞬间可能拿不到条目；退回 localConfiguration 里的 uri，
+        // 不要把这一帧的进度直接丢掉（丢掉就是「看了但没进记录」）
+        val uri = item?.mediaId?.takeIf { it.isNotBlank() }
+            ?: item?.localConfiguration?.uri?.toString()
+            ?: return
+        if (uri.isBlank()) return
+        val position = runCatching { controller.currentPosition }.getOrDefault(0L)
+        if (position > 0) {
             settings.savePosition(uri, position)
+        } else {
+            // 只播了几秒、进度还没攒起来也要记一条「看过」，记录页才会出现
+            settings.markPlayed(uri)
         }
         // 网盘接口不返回时长，第一次播出来后回写到收藏/记录的元信息里，列表就不再显示 00:00
         if (uri.startsWith("quark://")) {
-            val duration = controller.duration
+            val duration = runCatching { controller.duration }.getOrDefault(0L)
             if (duration > 0) {
                 val fid = uri.removePrefix("quark://")
                 settings.cloudVideo(fid)?.let { video ->
@@ -323,6 +343,24 @@ class PlayerActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** 播放中每隔几秒落一次进度：只靠 onPause / onStop，进程被系统直接杀掉时会整段丢失。 */
+    private fun startProgressTicker() {
+        if (progressTicker != null) return
+        val runnable = object : Runnable {
+            override fun run() {
+                rememberPosition()
+                window.decorView.postDelayed(this, PROGRESS_SAVE_INTERVAL_MS)
+            }
+        }
+        progressTicker = runnable
+        window.decorView.postDelayed(runnable, PROGRESS_SAVE_INTERVAL_MS)
+    }
+
+    private fun stopProgressTicker() {
+        progressTicker?.let { runnable -> window.decorView.removeCallbacks(runnable) }
+        progressTicker = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -348,6 +386,9 @@ class PlayerActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "GlassPlayer"
+
+        /** 播放中落盘进度的间隔：太短会频繁写 prefs，太长则被杀进程时丢得多。 */
+        private const val PROGRESS_SAVE_INTERVAL_MS = 5_000L
         const val EXTRA_URIS = "extra_uris"
         const val EXTRA_TITLES = "extra_titles"
         const val EXTRA_INDEX = "extra_index"

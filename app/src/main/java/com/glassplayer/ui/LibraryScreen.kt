@@ -24,6 +24,8 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +43,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -68,6 +71,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -76,6 +80,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -148,6 +153,9 @@ private const val TAB_HISTORY = 3
 private const val TAB_CLOUD = 4
 private const val TAB_RESOURCE = 5
 
+/** 「继续观看」的最低进度门槛：看够 10 秒就算看过，不必等满 1 分钟。 */
+private const val CONTINUE_MIN_MS = 10_000L
+
 @Composable
 fun LibraryScreen(
     settings: SettingsStore,
@@ -193,10 +201,15 @@ fun LibraryScreen(
     var minDurationPreview by remember { mutableFloatStateOf(settings.minDurationSec.toFloat()) }
     var sortAscending by remember { mutableStateOf(settings.sortAscending) }
     var gridLayout by remember { mutableStateOf(settings.gridLayout) }
+    // 视频卡片底板透明度：只作用于卡片背景，文字 alpha 不变
+    var cardAlpha by remember { mutableFloatStateOf(settings.cardBackgroundAlpha) }
+    // 设备真实支持的刷新率，用于设置页提示（有些屏只有 60/90，硬选 120 会黑屏）
+    val hostActivity = context as? android.app.Activity
+    val refreshRates = remember { com.glassplayer.data.RefreshRate.supportedRates(hostActivity) }
     // 8000+ 条播放进度/播放记录放在 IO 线程读，避免回到媒体库时主线程一次性拷贝 prefs
     var positions by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
     var lastPlayed by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
-    var tab by remember { mutableIntStateOf(TAB_FOLDERS) }
+    var tab by remember { mutableIntStateOf(settings.startTab) }
     // 网盘内嵌在主页面：状态放在这一层，切 tab 回来不用重新登录/重新拉列表
     val cloudState = rememberCloudState(settings)
     var sortMode by remember { mutableIntStateOf(settings.sortMode) }
@@ -235,6 +248,11 @@ fun LibraryScreen(
 
     var cloudSheetOpen by remember { mutableStateOf(false) }
     var resourceSheetOpen by remember { mutableStateOf(false) }
+    // 标题栏实测高度：网盘 / 资源页的弹层遮罩只盖住列表区域，
+    // 需要按这个高度把顶部（状态栏 + 标题栏）也压暗，否则会露出一条亮边
+    var headerHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val systemBarPadding = WindowInsets.systemBars.asPaddingValues()
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -293,11 +311,15 @@ fun LibraryScreen(
     val favoriteList = remember(videos, cloudItems, favorites, query, sortMode, sortAscending) {
         filterAndSort((videos + cloudItems).filter { favorites.contains(it.uri) })
     }
-    val continueWatching = remember(videos, positions) {
-        videos.filter { item ->
+    // 「继续观看」：本地 + 网盘条目一起算。
+    // 之前只看本地 videos、而且要看过 1 分钟才出现，刚点开的视频永远进不来，
+    // 表现就是「继续观看没生效、记录也没写进去」。现在 10 秒即可，时长未知的网盘条目不做上限判断。
+    val continueWatching = remember(videos, cloudItems, positions, lastPlayed) {
+        (videos + cloudItems).filter { item ->
             val progress = positions[item.uri] ?: 0L
-            progress > 60_000 && item.durationMs > 0 && progress < item.durationMs - 15_000
-        }.sortedByDescending { positions[it.uri] ?: 0L }.take(8)
+            progress > CONTINUE_MIN_MS &&
+                (item.durationMs <= 0 || progress < item.durationMs - 15_000)
+        }.sortedByDescending { lastPlayed[it.uri] ?: (positions[it.uri] ?: 0L) }.take(8)
     }
     // 排序选项集中在这里。原来 sortLabel 只列了 4 项再 coerceIn(0, 3)，
     // 选「分辨率」「路径」时会错显示成「大小」。
@@ -312,10 +334,12 @@ fun LibraryScreen(
         7 to "首字母",
     )
     val sortLabel = sortOptions.firstOrNull { it.first == sortMode }?.second ?: "日期"
+    // 记录页只认「看过」的时间戳：哪怕只点开几秒、进度还是 0，也该出现在记录里。
+    // 老版本可能只留下 pos_ 而没写 last_played（早期云盘键迁移），这条也兜住。
     val historyList = remember(videos, cloudItems, lastPlayed, positions) {
         (videos + cloudItems).filter { item ->
-            lastPlayed.containsKey(item.uri) && (positions[item.uri] ?: 0L) > 0
-        }.sortedByDescending { lastPlayed[it.uri] ?: 0L }
+            lastPlayed.containsKey(item.uri) || (positions[item.uri] ?: 0L) > 0
+        }.sortedByDescending { lastPlayed[it.uri] ?: (positions[it.uri] ?: 0L) }
     }
 
     fun shiftTab(delta: Int) {
@@ -367,6 +391,9 @@ fun LibraryScreen(
     // 而不是只折射一层静态壁纸。
     val contentBackdrop = rememberLayerBackdrop()
 
+    // 卡片底板透明度通过 CompositionLocal 下发：列表 / 网格 / 文件夹 / 网盘卡片都读同一个值，
+    // 文字颜色不经过这一层，所以永远不受影响。
+    CompositionLocalProvider(LocalCardBackgroundAlpha provides cardAlpha) {
     GlasmioBackdropHost(
         modifier = Modifier.fillMaxSize(),
         sampledContent = { LibraryWallpaper(isDark, backgroundImage) },
@@ -393,6 +420,8 @@ fun LibraryScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        // 量一次标题栏高度，给网盘 / 资源弹层的全屏遮罩补顶部缺口用
+                        .onGloballyPositioned { headerHeightPx = it.size.height }
                         .padding(start = 18.dp, end = 14.dp, top = 10.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1044,6 +1073,32 @@ fun LibraryScreen(
                 )
             }
 
+            // 网盘 / 资源这两页的弹层（视图排序、长按收藏、分享预览、登录、屏蔽列表…）
+            // 是嵌在列表区域里弹出的，遮罩只能覆盖列表本身：顶部标题栏、状态栏和底部导航留白
+            // 还亮着，看起来就是「界面只剩一块地方变暗」。这里用同色同透明度把缺口补齐，
+            // 视觉上等价于一层整屏遮罩，不动弹层自身的实现，也不会影响列表滚动性能。
+            if (cloudSheetOpen || resourceSheetOpen) {
+                val scrim = Color.Black.copy(alpha = 0.32f)
+                // 必须和列表区域那层遮罩严丝合缝：多压 1dp 就会在那条边上叠出第二层 0.32，
+                // 屏幕上就是一根横贯全屏的暗线（截图里那根）。按 px 算、再换算回 dp，
+                // 落点正好压在标题栏与列表的分界上，不多不少。
+                val topDimPx = headerHeightPx + with(density) { systemBarPadding.calculateTopPadding().roundToPx() }
+                Box(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .height(with(density) { topDimPx.toDp() })
+                        .background(scrim),
+                )
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(with(density) { systemBarPadding.calculateBottomPadding() })
+                        .background(scrim),
+                )
+            }
+
             GlassSheet(
                 visible = showSortSheet,
                 onDismissRequest = { showSortSheet = false },
@@ -1252,10 +1307,43 @@ fun LibraryScreen(
                     settingsVersion
 
                     Text(
-                        "外观",
+                        "默认启动界面",
                         style = MaterialTheme.typography.labelMedium,
                         color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
                         modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+                    )
+                    // 两行三列等宽：同一行三个胶囊都 weight(1f)，文字居中，
+                    // 不会再出现「网盘」比「全部」窄一截、第二行左边缘对不齐的情况。
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            listOf(0 to "全部", 1 to "文件", 4 to "网盘"),
+                            listOf(5 to "资源", 2 to "收藏", 3 to "记录"),
+                        ).forEach { row ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                row.forEach { (key, label) ->
+                                    StartTabPill(
+                                        text = label,
+                                        selected = settings.startTab == key,
+                                        modifier = Modifier.weight(1f),
+                                        onClick = {
+                                            settings.startTab = key
+                                            settingsVersion++
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "外观",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(bottom = 6.dp),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         GlassPill("跟随系统", selected = themeMode == 0, onClick = { onThemeModeChange(0) })
@@ -1269,12 +1357,6 @@ fun LibraryScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
                         modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                    Text(
-                        if (backgroundUri == null) "当前使用内置渐变，选一张照片当壁纸，液态玻璃会折射它。"
-                        else "已使用自定义背景图，液态玻璃折射的就是这张图。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = GlasmioTheme.colors.content.copy(alpha = 0.5f),
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1307,11 +1389,6 @@ fun LibraryScreen(
                     )
                     ToggleRow(
                         title = "底部导航液态玻璃",
-                        description = if (settings.liquidNavGlass) {
-                            "已开启：导航固定使用真实玻璃折射；若机型出现采样色块可关闭。"
-                        } else {
-                            "已关闭：导航为本地绘制的胶囊，任何机型都不会出现色块。"
-                        },
                         checked = settings.liquidNavGlass,
                         onToggle = {
                             settings.liquidNavGlass = !settings.liquidNavGlass
@@ -1494,6 +1571,39 @@ fun LibraryScreen(
                         })
                     }
 
+                    Column(Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp)) {
+                        Text(
+                            "视频框背景透明度",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = GlasmioTheme.colors.content,
+                        )
+                        Text(
+                            "只调视频卡片（视频框）底板的透明度，标题、时长这些文字保持实心不变；" +
+                                "调低能透出壁纸，调到 100% 就是原来的样子。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            SlimSlider(
+                                value = (cardAlpha - 0.15f) / 0.85f,
+                                onValueChange = { cardAlpha = 0.15f + it * 0.85f },
+                                onValueChangeFinished = {
+                                    settings.cardBackgroundAlpha = cardAlpha
+                                    settingsVersion++
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                "${(cardAlpha * 100).roundToInt()}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = GlasmioTheme.colors.content.copy(alpha = 0.6f),
+                                modifier = Modifier.width(44.dp),
+                            )
+                        }
+                    }
+
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "隐私",
@@ -1528,6 +1638,64 @@ fun LibraryScreen(
 
                     Spacer(Modifier.height(12.dp))
                     Text(
+                        "实验性 · 强制刷新率",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
+                        modifier = Modifier.padding(bottom = 2.dp),
+                    )
+                    Text(
+                        "强制 90Hz / 120Hz",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = GlasmioTheme.colors.content,
+                    )
+                    Text(
+                        buildString {
+                            append("给窗口指定高刷显示模式，主页和播放页都会跟着用。")
+                            if (refreshRates.isNotEmpty()) append(" 本机支持：" + refreshRates.joinToString(" / ") { "${it}Hz" })
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        GlassPill(
+                            text = "跟随系统",
+                            selected = settings.refreshRateMode == 0,
+                            onClick = {
+                                settings.refreshRateMode = 0
+                                settingsVersion++
+                                com.glassplayer.data.RefreshRate.apply(hostActivity, 0)
+                            },
+                        )
+                        GlassPill(
+                            text = "90Hz",
+                            selected = settings.refreshRateMode == 1,
+                            onClick = {
+                                settings.refreshRateMode = 1
+                                settingsVersion++
+                                com.glassplayer.data.RefreshRate.apply(hostActivity, 1)
+                            },
+                        )
+                        GlassPill(
+                            text = "120Hz",
+                            selected = settings.refreshRateMode == 2,
+                            onClick = {
+                                settings.refreshRateMode = 2
+                                settingsVersion++
+                                com.glassplayer.data.RefreshRate.apply(hostActivity, 2)
+                            },
+                        )
+                    }
+                    Text(
+                        "只挑系统里真实存在的显示模式，选不到会保持跟随系统；" +
+                            "部分机型息屏或切后台会把窗口模式重置，回到应用时会自动再设一次。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = GlasmioTheme.colors.content.copy(alpha = 0.45f),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
                         "诊断与关于",
                         style = MaterialTheme.typography.labelMedium,
                         color = GlasmioTheme.colors.content.copy(alpha = 0.55f),
@@ -1557,7 +1725,7 @@ fun LibraryScreen(
                         })
                     }
                     Text(
-                        "GlassPlayer 3.0 · 播放内核 Media3 1.11.1 · 界面 Glasmio 0.1.2",
+                        "GlassPlayer 1.4.55 · 播放内核 Media3 1.11.1 · 界面 Glasmio 0.1.2",
                         style = MaterialTheme.typography.labelSmall,
                         color = GlasmioTheme.colors.content.copy(alpha = 0.6f),
                         modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
@@ -1784,7 +1952,35 @@ fun LibraryScreen(
             }
         },
     )
+    }
 
+}
+
+@Composable
+private fun StartTabPill(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = GlasmioTheme.colors
+    val interaction = remember { MutableInteractionSource() }
+    Row(
+        modifier = modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) colors.accent else colors.elevatedBackground)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) Color.White else colors.content,
+            maxLines = 1,
+        )
+    }
 }
 
 @Composable
