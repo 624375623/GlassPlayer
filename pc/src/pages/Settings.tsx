@@ -325,7 +325,7 @@ export function SettingsPage() {
             <h3>关于</h3>
             <div className="form-row">
               <div className="label">
-                <b>GlassPlayer PC 1.0.6</b>
+                <b>GlassPlayer PC 1.0.7</b>
                 <span>基于手机版 GlassPlayer 3.9.40 的接口与功能重写：夸克网盘扫码登录、五个资源站搜索、转存、弹幕、字幕、断点续播。</span>
               </div>
             </div>

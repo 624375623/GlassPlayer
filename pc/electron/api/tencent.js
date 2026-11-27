@@ -290,9 +290,28 @@ const tencent = {
     return list
   },
 
-  async load(vid, limit) {
+  async load(rawId, limit) {
     const total = Number(limit) > 0 ? Math.floor(Number(limit)) : TOTAL_LIMIT
-    const base = JSON.parse(await httpText(`https://dm.video.qq.com/barrage/base/${vid}`, REFERER, 15000))
+    // 防御：复合 id（cid|vid，多见于链接导入 / 老版本记住的绑定）先展开成纯 vid，
+    // 否则 barrage/base 一定 404。展开后取第一条可用正片。
+    let vid = String(rawId || '').trim()
+    if (vid.includes('|')) {
+      const [cid, entry] = vid.split('|')
+      const eps = await tencent.episodes(cid, entry).catch(() => [])
+      if (!eps.length) throw new Error('这个腾讯链接下没找到可用的正片，换一部试试')
+      vid = String(eps[0].id)
+    }
+    if (!vid) throw new Error('弹幕 id 为空')
+
+    let base
+    try {
+      base = JSON.parse(await httpText(`https://dm.video.qq.com/barrage/base/${vid}`, REFERER, 15000))
+    } catch (e) {
+      if (/HTTP 404/.test(e.message || '')) {
+        throw new Error('腾讯没有这个视频的弹幕（链接可能已失效，换一个搜索结果试试）')
+      }
+      throw e
+    }
     const index = (base && base.segment_index) || {}
     let segments = Object.keys(index)
       .map((k) => index[k] && index[k].segment_name)
@@ -382,11 +401,23 @@ function chineseToInt(raw) {
   return null
 }
 
-/** 支持直接粘贴 v.qq.com 播放页 / 覆盖页链接。 */
+/**
+ * 支持直接粘贴 v.qq.com 播放页 / 覆盖页链接。
+ *
+ * isSeason 必须是 true：`cid|vid` 只是「封面 + 入口集」，单条弹幕接口只认纯 vid，
+ * 拿复合 id 去请求 barrage/base 会直接 404。标记成整季后前端会先展开集数，
+ * 让用户选「正片 / 第 N 集」，再用展开出来的纯 vid 加载。
+ */
 function parseLink(text) {
   const hit = /v\.qq\.com\/x\/cover\/([a-z0-9]+)\/([a-z0-9]+)/i.exec(String(text || ''))
   if (!hit) return null
-  return { source: 'tencent', id: `${hit[1]}|${hit[2]}`, title: '腾讯视频', subtitle: '链接导入 · 点开选择集数' }
+  return {
+    source: 'tencent',
+    id: `${hit[1]}|${hit[2]}`,
+    title: '腾讯视频',
+    subtitle: '链接导入 · 点开选择集数',
+    isSeason: true,
+  }
 }
 
 module.exports = { tencent, parseLink }

@@ -1314,6 +1314,23 @@ input[type='range']::-webkit-slider-thumb {
   gap: 12px;
   background: linear-gradient(to bottom, rgba(4, 6, 12, 0.86), rgba(4, 6, 12, 0));
   transition: opacity 0.24s, transform 0.24s;
+  /* 播放页自己铺满整个无边框窗口，顶栏就是窗口标题栏：
+     整条声明 drag 才能像普通程序一样拖着走，按钮再单独 no-drag 恢复点击 */
+  -webkit-app-region: drag;
+}
+
+.player .topbar .pbtn,
+.player .topbar .pclose {
+  -webkit-app-region: no-drag;
+}
+
+/* 窗口控制（最小化 / 最大化）与播放器按钮之间的细分隔线 */
+.player .pwinsep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: rgba(255, 255, 255, 0.18);
+  -webkit-app-region: no-drag;
 }
 
 .player .topbar .ttl {
@@ -1377,26 +1394,23 @@ input[type='range']::-webkit-slider-thumb {
   background: rgba(0, 174, 236, 0.22);
 }
 
-/* 关闭播放器：常驻淡红底，一眼能找到 */
+/* 关闭播放器：与顶栏其他按钮同尺寸同风格，仅悬停时铺红，兼顾一致性与辨识度 */
 .player .pclose {
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  width: 34px;
   height: 34px;
-  padding: 0 12px;
   border-radius: 10px;
-  font-size: 12.5px;
-  color: #ffd9db;
-  background: rgba(229, 72, 77, 0.22);
-  border: 1px solid rgba(229, 72, 77, 0.4);
-  transition: background 0.15s, color 0.15s;
+  display: grid;
+  place-items: center;
   flex: none;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.82);
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
 }
 
 .player .pclose:hover {
   background: #e5484d;
   color: #fff;
-  border-color: #e5484d;
 }
 
 .player .bottombar {

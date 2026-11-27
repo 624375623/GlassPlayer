@@ -210,6 +210,8 @@ export function Player({ target, queue, settings, onPatch, onExit, onSaveMeta, o
   const [resumeAt, setResumeAt] = useState<number | null>(null)
   const [hoverTime, setHoverTime] = useState<{ x: number; t: number } | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  /** 窗口是否最大化，用于把「最大化」按钮切成「还原」 */
+  const [winMax, setWinMax] = useState(false)
 
   const reportKey = target.key
   // 目录列表在播放器里重新按集数排过，上一集 / 下一集也照这个顺序走
@@ -856,6 +858,23 @@ export function Player({ target, queue, settings, onPatch, onExit, onSaveMeta, o
     return () => document.removeEventListener('fullscreenchange', onFs)
   }, [])
 
+  // 窗口最大化状态：初始化取一次，之后跟主进程的 maximize / unmaximize 事件同步，
+  // 这样双击标题栏、Win+↑ 等系统操作也能让按钮图标跟着变
+  useEffect(() => {
+    let alive = true
+    api
+      .isMax()
+      .then((v) => alive && setWinMax(!!v))
+      .catch(() => {})
+    const off = api.onEvent((msg) => {
+      if (msg && msg.type === 'window:max') setWinMax(!!msg.payload)
+    })
+    return () => {
+      alive = false
+      off?.()
+    }
+  }, [])
+
   const exit = useCallback(() => {
     const v = video()
     if (v) {
@@ -1169,9 +1188,19 @@ export function Player({ target, queue, settings, onPatch, onExit, onSaveMeta, o
         <button className="pbtn" onClick={() => setPanel(panel === 'more' ? 'none' : 'more')} title="更多">
           <Icon name="settings" />
         </button>
+        <span className="pwinsep" />
+        <button className="pbtn" onClick={() => api.minimize()} title="最小化">
+          <Icon name="minimize" size={17} />
+        </button>
+        <button
+          className="pbtn"
+          onClick={async () => setWinMax(!!(await api.toggleMax()))}
+          title={winMax ? '还原窗口' : '最大化窗口'}
+        >
+          <Icon name={winMax ? 'copy' : 'maximize'} size={winMax ? 15 : 16} />
+        </button>
         <button className="pclose" onClick={exit} title="关闭播放器 (Esc)">
-          <Icon name="close" size={14} />
-          <span>关闭</span>
+          <Icon name="close" size={15} />
         </button>
       </div>
 
@@ -1434,11 +1463,11 @@ export function Player({ target, queue, settings, onPatch, onExit, onSaveMeta, o
             </div>
             <BiliSlider
               label="时间偏移"
-              min={-5000}
-              max={5000}
+              min={-20000}
+              max={20000}
               step={100}
               value={settings.danmakuOffsetMs}
-              display={`${(settings.danmakuOffsetMs / 1000).toFixed(1)}s`}
+              display={`${settings.danmakuOffsetMs > 0 ? '+' : ''}${(settings.danmakuOffsetMs / 1000).toFixed(1)}s`}
               onChange={(v) => onPatch({ danmakuOffsetMs: v })}
             />
             <div className="dm-row">

@@ -12,7 +12,13 @@ export const useToast = () => useContext(ToastContext)
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<{ id: number; message: string; kind: ToastKind }[]>([])
   const seq = useRef(1)
+  // 同一句话 2.5 秒内只弹一次：连点失败的按钮时不会堆出一墙相同的报错
+  const last = useRef(new Map<string, number>())
   const push = useCallback<ToastCtx>((message, kind = 'info') => {
+    const now = Date.now()
+    const seenAt = last.current.get(message) || 0
+    if (now - seenAt < 2500) return
+    last.current.set(message, now)
     const id = seq.current++
     setItems((prev) => [...prev, { id, message, kind }])
     setTimeout(() => setItems((prev) => prev.filter((t) => t.id !== id)), kind === 'error' ? 4200 : 2400)
